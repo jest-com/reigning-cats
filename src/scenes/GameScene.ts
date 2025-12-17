@@ -24,7 +24,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image("cat", "molly-cat-512x512.png");
+    // Load cat animation frames
+    this.load.image("cat1", "molly-cat-animation/molly1.png");
+    this.load.image("cat2", "molly-cat-animation/molly2.png");
+    this.load.image("cat3", "molly-cat-animation/molly3.png");
+    this.load.image("cat4", "molly-cat-animation/molly4.png");
     this.load.audio("bgMusic", "retro-game-402454.mp3");
   }
 
@@ -32,6 +36,19 @@ export class GameScene extends Phaser.Scene {
     this.score = 0;
     this.catSpeed = 200; // Reset cat speed
     this.spawnDelay = 2000; // Reset spawn delay
+
+    // Create cat falling animation
+    this.anims.create({
+      key: "cat-fall",
+      frames: [
+        { key: "cat1" },
+        { key: "cat2" },
+        { key: "cat3" },
+        { key: "cat4" },
+      ],
+      frameRate: 8,
+      repeat: -1,
+    });
 
     // Initialize Jest SDK and get entry payload
     JestSDK.init().then(() => {
@@ -268,8 +285,9 @@ export class GameScene extends Phaser.Scene {
     const maxX = this.scale.width - margin;
 
     const x = Phaser.Math.Between(minX, maxX);
-    const cat = this.cats.create(x, -32, "cat") as Phaser.Physics.Arcade.Sprite;
+    const cat = this.cats.create(x, -32, "cat1") as Phaser.Physics.Arcade.Sprite;
     cat.setScale(this.catScale);
+    cat.play("cat-fall");
 
     // Use current cat speed with some variation
     const speedVariation = this.catSpeed * 0.2; // ±20% variation
