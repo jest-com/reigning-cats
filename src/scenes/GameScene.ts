@@ -24,11 +24,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // Load cat animation frames
-    this.load.image("cat1", "molly-cat-animation/molly1.png");
-    this.load.image("cat2", "molly-cat-animation/molly2.png");
-    this.load.image("cat3", "molly-cat-animation/molly3.png");
-    this.load.image("cat4", "molly-cat-animation/molly4.png");
+    // Load cat animation frames for all five cats
+    // Bella cat
+    this.load.image("bella-cat1", "cat-images/bella-cat1.png");
+    this.load.image("bella-cat2", "cat-images/bella-cat2.png");
+    this.load.image("bella-cat3", "cat-images/bella-cat3.png");
+    // Black cat
+    this.load.image("black-cat1", "cat-images/black-cat1.png");
+    this.load.image("black-cat2", "cat-images/black-cat2.png");
+    this.load.image("black-cat3", "cat-images/black-cat3.png");
+    // Grey cat
+    this.load.image("grey-cat1", "cat-images/grey-cat1.png");
+    this.load.image("grey-cat2", "cat-images/grey-cat2.png");
+    this.load.image("grey-cat3", "cat-images/grey-cat3.png");
+    // Molly cat
+    this.load.image("molly-cat1", "cat-images/molly1.png");
+    this.load.image("molly-cat2", "cat-images/molly2.png");
+    this.load.image("molly-cat3", "cat-images/molly3.png");
+    // Orange cat
+    this.load.image("orange-cat1", "cat-images/orange-cat1.png");
+    this.load.image("orange-cat2", "cat-images/orange-cat2.png");
+    this.load.image("orange-cat3", "cat-images/orange-cat3.png");
+
     this.load.audio("bgMusic", "retro-game-402454.mp3");
   }
 
@@ -37,14 +54,62 @@ export class GameScene extends Phaser.Scene {
     this.catSpeed = 200; // Reset cat speed
     this.spawnDelay = 2000; // Reset spawn delay
 
-    // Create cat falling animation
+    // Create cat falling animations for all five cats (frames: 1, 2, 3, 2)
     this.anims.create({
-      key: "cat-fall",
+      key: "bella-fall",
       frames: [
-        { key: "cat1" },
-        { key: "cat2" },
-        { key: "cat3" },
-        { key: "cat4" },
+        { key: "bella-cat1" },
+        { key: "bella-cat2" },
+        { key: "bella-cat3" },
+        { key: "bella-cat2" },
+      ],
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    this.anims.create({
+      key: "black-fall",
+      frames: [
+        { key: "black-cat1" },
+        { key: "black-cat2" },
+        { key: "black-cat3" },
+        { key: "black-cat2" },
+      ],
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    this.anims.create({
+      key: "grey-fall",
+      frames: [
+        { key: "grey-cat1" },
+        { key: "grey-cat2" },
+        { key: "grey-cat3" },
+        { key: "grey-cat2" },
+      ],
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    this.anims.create({
+      key: "molly-fall",
+      frames: [
+        { key: "molly-cat1" },
+        { key: "molly-cat2" },
+        { key: "molly-cat3" },
+        { key: "molly-cat2" },
+      ],
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    this.anims.create({
+      key: "orange-fall",
+      frames: [
+        { key: "orange-cat1" },
+        { key: "orange-cat2" },
+        { key: "orange-cat3" },
+        { key: "orange-cat2" },
       ],
       frameRate: 8,
       repeat: -1,
@@ -284,10 +349,20 @@ export class GameScene extends Phaser.Scene {
     const minX = margin;
     const maxX = this.scale.width - margin;
 
+    // Randomly select one of the five cat animations
+    const catAnimations = [
+      { key: "bella-cat1", anim: "bella-fall" },
+      { key: "black-cat1", anim: "black-fall" },
+      { key: "grey-cat1", anim: "grey-fall" },
+      { key: "molly-cat1", anim: "molly-fall" },
+      { key: "orange-cat1", anim: "orange-fall" },
+    ];
+    const selectedCat = Phaser.Math.RND.pick(catAnimations);
+
     const x = Phaser.Math.Between(minX, maxX);
-    const cat = this.cats.create(x, -32, "cat1") as Phaser.Physics.Arcade.Sprite;
+    const cat = this.cats.create(x, -32, selectedCat.key) as Phaser.Physics.Arcade.Sprite;
     cat.setScale(this.catScale);
-    cat.play("cat-fall");
+    cat.play(selectedCat.anim);
 
     // Use current cat speed with some variation
     const speedVariation = this.catSpeed * 0.2; // ±20% variation
