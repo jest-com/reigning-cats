@@ -24,24 +24,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // Load cat animation frames for all five cats
-    // Bella cat
+    // Load cat animation frames for cats
     this.load.image("bella-cat1", "cat-images/bella-cat1.png");
     this.load.image("bella-cat2", "cat-images/bella-cat2.png");
     this.load.image("bella-cat3", "cat-images/bella-cat3.png");
-    // Black cat
     this.load.image("black-cat1", "cat-images/black-cat1.png");
     this.load.image("black-cat2", "cat-images/black-cat2.png");
     this.load.image("black-cat3", "cat-images/black-cat3.png");
-    // Grey cat
     this.load.image("grey-cat1", "cat-images/grey-cat1.png");
     this.load.image("grey-cat2", "cat-images/grey-cat2.png");
     this.load.image("grey-cat3", "cat-images/grey-cat3.png");
-    // Molly cat
     this.load.image("molly-cat1", "cat-images/molly1.png");
     this.load.image("molly-cat2", "cat-images/molly2.png");
     this.load.image("molly-cat3", "cat-images/molly3.png");
-    // Orange cat
     this.load.image("orange-cat1", "cat-images/orange-cat1.png");
     this.load.image("orange-cat2", "cat-images/orange-cat2.png");
     this.load.image("orange-cat3", "cat-images/orange-cat3.png");
@@ -54,7 +49,7 @@ export class GameScene extends Phaser.Scene {
     this.catSpeed = 200; // Reset cat speed
     this.spawnDelay = 2000; // Reset spawn delay
 
-    // Create cat falling animations for all five cats (frames: 1, 2, 3, 2)
+    // Create cat falling animations (frames: 1, 2, 3, 2)
     this.anims.create({
       key: "bella-fall",
       frames: [
@@ -360,7 +355,11 @@ export class GameScene extends Phaser.Scene {
     const selectedCat = Phaser.Math.RND.pick(catAnimations);
 
     const x = Phaser.Math.Between(minX, maxX);
-    const cat = this.cats.create(x, -32, selectedCat.key) as Phaser.Physics.Arcade.Sprite;
+    const cat = this.cats.create(
+      x,
+      -32,
+      selectedCat.key
+    ) as Phaser.Physics.Arcade.Sprite;
     cat.setScale(this.catScale);
     cat.play(selectedCat.anim);
 
