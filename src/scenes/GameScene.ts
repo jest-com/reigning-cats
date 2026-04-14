@@ -303,45 +303,49 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createBackground(): void {
-    const g = this.add.graphics();
-    g.fillGradientStyle(0x6a8caf, 0x6a8caf, 0x4a6fa5, 0x4a6fa5);
-    g.fillRect(0, 0, this.scale.width, this.scale.height);
+    const background = this.add.graphics();
+    background.fillGradientStyle(0x6a8caf, 0x6a8caf, 0x4a6fa5, 0x4a6fa5);
+    background.fillRect(0, 0, this.scale.width, this.scale.height);
   }
 
   private createSprites(): void {
     // Basket texture
-    const b = this.make.graphics({ x: 0, y: 0 });
-    b.fillStyle(0xd2b48c);
-    b.fillRect(8, 8, 48, 24);
-    b.fillStyle(0xc19a6b);
-    b.fillRect(4, 4, 56, 8);
-    b.fillStyle(0xa0826d);
-    b.fillRect(12, 28, 40, 4);
-    b.fillStyle(0x8b7355);
-    for (let y = 10; y < 30; y += 4) b.fillRect(8, y, 48, 1);
-    for (let x = 10; x < 56; x += 6) b.fillRect(x, 8, 1, 24);
-    b.fillRect(16, 4, 4, 6);
-    b.fillRect(44, 4, 4, 6);
-    b.generateTexture("basket", 64, 32);
-    b.destroy();
+    const basketGraphics = this.make.graphics({ x: 0, y: 0 });
+    basketGraphics.fillStyle(0xd2b48c);
+    basketGraphics.fillRect(8, 8, 48, 24);
+    basketGraphics.fillStyle(0xc19a6b);
+    basketGraphics.fillRect(4, 4, 56, 8);
+    basketGraphics.fillStyle(0xa0826d);
+    basketGraphics.fillRect(12, 28, 40, 4);
+    basketGraphics.fillStyle(0x8b7355);
+    for (let y = 10; y < 30; y += 4) {
+      basketGraphics.fillRect(8, y, 48, 1);
+    }
+    for (let x = 10; x < 56; x += 6) {
+      basketGraphics.fillRect(x, 8, 1, 24);
+    }
+    basketGraphics.fillRect(16, 4, 4, 6);
+    basketGraphics.fillRect(44, 4, 4, 6);
+    basketGraphics.generateTexture("basket", 64, 32);
+    basketGraphics.destroy();
 
     // Cloud texture
-    const c = this.make.graphics({ x: 0, y: 0 });
-    c.fillStyle(0xd3d3d3);
-    c.fillCircle(30, 30, 20);
-    c.fillCircle(50, 25, 25);
-    c.fillCircle(70, 30, 20);
-    c.fillCircle(40, 20, 15);
-    c.fillCircle(60, 20, 15);
-    c.generateTexture("cloud", 100, 50);
-    c.destroy();
+    const cloudGraphics = this.make.graphics({ x: 0, y: 0 });
+    cloudGraphics.fillStyle(0xd3d3d3);
+    cloudGraphics.fillCircle(30, 30, 20);
+    cloudGraphics.fillCircle(50, 25, 25);
+    cloudGraphics.fillCircle(70, 30, 20);
+    cloudGraphics.fillCircle(40, 20, 15);
+    cloudGraphics.fillCircle(60, 20, 15);
+    cloudGraphics.generateTexture("cloud", 100, 50);
+    cloudGraphics.destroy();
 
     // Raindrop texture
-    const r = this.make.graphics({ x: 0, y: 0 });
-    r.fillStyle(0x87ceeb);
-    r.fillRect(0, 0, 2, 8);
-    r.generateTexture("raindrop", 2, 8);
-    r.destroy();
+    const rainGraphics = this.make.graphics({ x: 0, y: 0 });
+    rainGraphics.fillStyle(0x87ceeb);
+    rainGraphics.fillRect(0, 0, 2, 8);
+    rainGraphics.generateTexture("raindrop", 2, 8);
+    rainGraphics.destroy();
   }
 
   private createBasket(): void {
