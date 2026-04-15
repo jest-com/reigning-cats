@@ -22,20 +22,25 @@
  *
  * Provide either scheduledAt (exact) or scheduledInDays (fuzzy),
  * but not both. CTA text must be 1–25 characters.
+ * Priority defaults to "low" if not specified.
  *
  * To attach an image, upload it in the Developer Console first
  * and pass its reference as imageReference.
  */
-export function scheduleNotification(options: {
-  identifier: string;
-  body: string;
-  ctaText: string;
-  scheduledAt?: Date;
-  scheduledInDays?: number;
-  priority?: "low" | "medium" | "high";
-  imageReference?: string;
-  entryPayload?: Record<string, string>;
-}): void {
+export function scheduleNotification(
+  options: {
+    identifier: string;
+    body: string;
+    title?: string;
+    ctaText: string;
+    priority: NotificationPriority;
+    imageReference?: string;
+    entryPayload?: Record<string, unknown>;
+  } & (
+    | { scheduledAt: Date; scheduledInDays?: never }
+    | { scheduledAt?: never; scheduledInDays: number }
+  ),
+): void {
   JestSDK.notifications.scheduleNotification(options);
 }
 

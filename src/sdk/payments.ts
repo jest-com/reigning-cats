@@ -22,7 +22,7 @@
  *
  * Each product includes: sku, name, description, and price (in Jest Tokens).
  */
-export async function getProducts(): Promise<JestProduct[]> {
+export async function getProducts() {
   return JestSDK.payments.getProducts();
 }
 
