@@ -56,14 +56,16 @@ export function unscheduleNotification(identifier: string): void {
 // and day offset so the game can track which messages drive
 // player returns (see getEntryPayload() on re-entry).
 
+type RetentionContext = { score: number; playerName: string };
+
 const RETENTION_SERIES = [
   {
     identifier: "retention_d1",
     scheduledInDays: 1,
     priority: "high" as const,
     template: "score_challenge_v1",
-    body: (score: number) =>
-      `Your high score of ${score} is under threat! Come defend it.`,
+    body: ({ score, playerName }: RetentionContext) =>
+      `${playerName}, your high score of ${score} is under threat! Come defend it.`,
     ctaText: "Play Now",
   },
   {
@@ -71,7 +73,8 @@ const RETENTION_SERIES = [
     scheduledInDays: 3,
     priority: "medium" as const,
     template: "miss_you_v1",
-    body: () => `The cats miss you! Your basket is gathering dust.`,
+    body: ({ playerName }: RetentionContext) =>
+      `Hey ${playerName}, the cats miss you! Your basket is gathering dust.`,
     ctaText: "Play Again",
   },
   {
@@ -79,8 +82,8 @@ const RETENTION_SERIES = [
     scheduledInDays: 7,
     priority: "low" as const,
     template: "weekly_reminder_v1",
-    body: (score: number) =>
-      `Can you beat ${score}? New challengers are catching up!`,
+    body: ({ score, playerName }: RetentionContext) =>
+      `${playerName}, can you beat ${score}? New challengers are catching up!`,
     ctaText: "Play",
   },
 ];
@@ -90,19 +93,20 @@ const RETENTION_SERIES = [
  *
  * Each notification uses fuzzy scheduling (scheduledInDays) so
  * the platform picks optimal delivery times per player. Messages
- * reference the player's score to feel personal rather than generic.
+ * reference the player's name and score to feel personal rather
+ * than generic.
  *
  * Each notification's entryPayload includes notification_template
  * and notification_offset so the game can attribute re-engagement
  * and A/B test different copy.
  */
-export function scheduleRetentionSeries(score: number): void {
+export function scheduleRetentionSeries(context: RetentionContext): void {
   for (const n of RETENTION_SERIES) {
     JestSDK.notifications.scheduleNotification({
       identifier: n.identifier,
       scheduledInDays: n.scheduledInDays,
       priority: n.priority,
-      body: n.body(score),
+      body: n.body(context),
       ctaText: n.ctaText,
       entryPayload: {
         notification_template: n.template,

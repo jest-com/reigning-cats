@@ -7,9 +7,18 @@
  */
 
 /**
- * Returns the current player's ID and registration status.
+ * Returns the current player's identity:
+ * - playerId: stable per-game identifier (persists across guest → registered)
+ * - registered: whether the player has a Jest account
+ * - username: platform display name (only set for registered players)
+ * - avatarUrl: platform avatar image URL (only set for registered players)
  */
-export function getPlayer(): { playerId: string; registered: boolean } {
+export function getPlayer(): {
+  playerId: string;
+  registered: boolean;
+  username: string | null;
+  avatarUrl: string | null;
+} {
   return JestSDK.getPlayer();
 }
 
@@ -30,7 +39,12 @@ export function isRegistered(): boolean {
  * reject tokens older than a chosen threshold on your server.
  */
 export async function getPlayerSigned(): Promise<{
-  player: { playerId: string; registered: boolean };
+  player: {
+    playerId: string;
+    registered: boolean;
+    username: string | null;
+    avatarUrl: string | null;
+  };
   playerSigned: string;
 }> {
   return JestSDK.getPlayerSigned();

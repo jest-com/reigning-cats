@@ -1,20 +1,32 @@
 import * as playerData from "../sdk/data";
 import { isRegistered, promptLogin } from "../sdk/player";
 import { scheduleRetentionSeries } from "../sdk/notifications";
-import { shareGame } from "../sdk/referrals";
+import { getReferralCount, shareGame } from "../sdk/referrals";
+
+const SCORE_THRESHOLD_FOR_REG_PROMPT = 5;
+const REFERRAL_REFERENCE = "share_score";
 
 export class GameOverScene extends Phaser.Scene {
   private finalScore = 0;
   private playerName = "Player 1";
+  private gamesPlayed = 1;
+  private isNewHighScore = false;
   private isMobile = false;
 
   constructor() {
     super({ key: "GameOverScene" });
   }
 
-  init(data: { score: number; playerName: string }): void {
+  init(data: {
+    score: number;
+    playerName: string;
+    gamesPlayed?: number;
+    isNewHighScore?: boolean;
+  }): void {
     this.finalScore = data.score ?? 0;
     this.playerName = data.playerName ?? "Player 1";
+    this.gamesPlayed = data.gamesPlayed ?? 1;
+    this.isNewHighScore = data.isNewHighScore ?? false;
     this.isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
         navigator.userAgent,
@@ -49,13 +61,16 @@ export class GameOverScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // Persisted high score
+    // Persisted high score (with a "NEW!" badge if applicable)
     const highScore = (playerData.get("highScore") as number) ?? 0;
+    const highScoreLabel = this.isNewHighScore
+      ? `NEW High Score: ${highScore}`
+      : `High Score: ${highScore}`;
     this.add
-      .text(centerX, centerY + 10, `High Score: ${highScore}`, {
+      .text(centerX, centerY + 10, highScoreLabel, {
         fontSize: "22px",
         fontFamily: "Courier New, monospace",
-        color: "#ffff00",
+        color: this.isNewHighScore ? "#1AFF44" : "#ffff00",
         stroke: "#000000",
         strokeThickness: 3,
       })
@@ -71,26 +86,66 @@ export class GameOverScene extends Phaser.Scene {
     });
 
     if (isRegistered()) {
-      // Schedule a D1/D3/D7 retention notification series
-      scheduleRetentionSeries(this.finalScore);
+      // Schedule a personalized D1/D3/D7 retention series
+      scheduleRetentionSeries({
+        score: this.finalScore,
+        playerName: this.playerName,
+      });
 
-      // Let registered players share via referral link
+      // Share button (referrals)
       this.createButton(centerX, centerY + 170, "Share", () => {
         shareGame({
-          reference: "share_score",
+          reference: REFERRAL_REFERENCE,
           shareTitle: "Reigning Cats",
           shareText: `I scored ${this.finalScore} in Reigning Cats! Can you beat me?`,
+          entryPayload: { referrer_name: this.playerName },
         });
       });
+
+      // Surface referral conversions the player has earned
+      this.showReferralCount(centerX, centerY + 240);
     } else {
-      // Prompt guest players to sign up (required for notifications)
-      this.createButton(centerX, centerY + 170, "Sign Up", () => {
-        promptLogin();
+      // Trigger registration at a meaningful moment instead of showing
+      // a button. Criteria: first game with a score that shows real
+      // engagement. The platform dialog explains the benefits.
+      this.maybePromptRegistration();
+    }
+  }
+
+  private maybePromptRegistration(): void {
+    const isFirstGame = this.gamesPlayed === 1;
+    const hasMeaningfulScore =
+      this.finalScore >= SCORE_THRESHOLD_FOR_REG_PROMPT;
+
+    if (isFirstGame && hasMeaningfulScore) {
+      // Pass context through the entry payload so the game can react
+      // appropriately when the player returns after registering.
+      promptLogin({
+        reason: "save_first_score",
+        score: this.finalScore,
       });
     }
   }
 
-  // ── UI Helpers ──────────────────────────────────────────────
+  private async showReferralCount(x: number, y: number): Promise<void> {
+    try {
+      const count = await getReferralCount(REFERRAL_REFERENCE);
+      if (count === 0) {
+        return;
+      }
+      this.add
+        .text(x, y, `Friends invited: ${count}`, {
+          fontSize: "18px",
+          fontFamily: "Courier New, monospace",
+          color: "#1AFF44",
+          stroke: "#000000",
+          strokeThickness: 3,
+        })
+        .setOrigin(0.5);
+    } catch (err) {
+      console.error("Failed to fetch referral count:", err);
+    }
+  }
 
   private createButton(
     x: number,

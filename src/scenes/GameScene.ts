@@ -1,5 +1,5 @@
 import * as playerData from "../sdk/data";
-import { getEntryPayload, isRegistered } from "../sdk/player";
+import { getEntryPayload, getPlayer, isRegistered } from "../sdk/player";
 import * as payments from "../sdk/payments";
 import { unscheduleRetentionSeries } from "../sdk/notifications";
 import { setLoadingProgress } from "../sdk/loading";
@@ -187,17 +187,23 @@ export class GameScene extends Phaser.Scene {
       this.backgroundMusic.stop();
     }
 
-    // Persist high score
-    const highScore = (playerData.get("highScore") as number) ?? 0;
-    if (this.score > highScore) {
+    // Persist high score and games played (so the next screen can decide
+    // whether to prompt the player to register at a meaningful moment)
+    const prevHighScore = (playerData.get("highScore") as number) ?? 0;
+    const isNewHighScore = this.score > prevHighScore;
+    if (isNewHighScore) {
       playerData.set("highScore", this.score);
     }
+    const gamesPlayed = ((playerData.get("gamesPlayed") as number) ?? 0) + 1;
+    playerData.set("gamesPlayed", gamesPlayed);
     playerData.flush();
 
     const playerName = (playerData.get("playerName") as string) ?? "Player 1";
     this.scene.start("GameOverScene", {
       score: this.score,
       playerName,
+      gamesPlayed,
+      isNewHighScore,
     });
   }
 
@@ -450,20 +456,33 @@ export class GameScene extends Phaser.Scene {
       unscheduleRetentionSeries();
     }
 
-    // If the player entered from a notification and has a saved name,
-    // skip the start screen and jump straight into gameplay
     const entry = getEntryPayload();
-    const savedName = playerData.get("playerName") as string | undefined;
-    if (entry.notification_template && savedName) {
+    const player = getPlayer();
+
+    // Greet players who entered via a referral link
+    this.applyReferrerWelcome(entry);
+
+    // Prefer the platform username for registered players; fall back
+    // to a saved custom name, or prompt the player to enter one
+    const resolvedName =
+      player.username ??
+      (playerData.get("playerName") as string | undefined) ??
+      null;
+
+    // Skip the start screen if the player already has a name AND either
+    // entered from a notification or is a registered returning player
+    const returningFromNotification =
+      typeof entry.notification_template === "string";
+    if (resolvedName && returningFromNotification) {
       container.style.display = "none";
       payments
         .recoverPurchases((sku) => this.grantProduct(sku))
         .catch((err) => console.error("Failed to recover purchases:", err));
-      this.startGame(savedName);
+      this.startGame(resolvedName);
       return;
     }
 
-    // Normal flow: show name input and shop
+    // Show name input + shop. Registered players skip the name field.
     let nameInput = document.getElementById("player-name");
     let startBtn = document.getElementById(
       "start-game-btn",
@@ -472,18 +491,28 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Clone elements to remove stale listeners from previous game sessions
     const freshInput = nameInput.cloneNode(true) as HTMLInputElement;
     const freshBtn = startBtn.cloneNode(true) as HTMLButtonElement;
     nameInput.parentNode!.replaceChild(freshInput, nameInput);
     startBtn.parentNode!.replaceChild(freshBtn, startBtn);
 
-    // Pre-fill saved player name
-    if (savedName) {
-      freshInput.value = savedName;
-    }
-    if (!this.isMobile) {
-      freshInput.focus();
+    if (player.username) {
+      // Registered player — hide the name input entirely
+      freshInput.value = player.username;
+      freshInput.style.display = "none";
+      const label = document.querySelector(
+        'label[for="player-name"]',
+      ) as HTMLLabelElement | null;
+      if (label) {
+        label.textContent = `WELCOME, ${player.username.toUpperCase()}`;
+      }
+    } else {
+      if (resolvedName) {
+        freshInput.value = resolvedName;
+      }
+      if (!this.isMobile) {
+        freshInput.focus();
+      }
     }
 
     // Recover incomplete purchases, then list available products
@@ -504,5 +533,38 @@ export class GameScene extends Phaser.Scene {
       }
     });
     freshBtn.addEventListener("click", handleStart);
+  }
+
+  private applyReferrerWelcome(entry: Record<string, unknown>): void {
+    const referrerName = entry.referrer_name;
+    if (typeof referrerName !== "string" || referrerName.length === 0) {
+      return;
+    }
+
+    // Briefly show a welcome message for players invited via a referral link
+    const toast = this.add
+      .text(
+        this.scale.width / 2,
+        this.scale.height / 2,
+        `${referrerName} invited you!`,
+        {
+          fontSize: "32px",
+          fontFamily: "Courier New, monospace",
+          color: "#ffff00",
+          stroke: "#000000",
+          strokeThickness: 5,
+          fontStyle: "bold",
+        },
+      )
+      .setOrigin(0.5)
+      .setDepth(2000);
+
+    this.tweens.add({
+      targets: toast,
+      alpha: 0,
+      duration: 1500,
+      delay: 2500,
+      onComplete: () => toast.destroy(),
+    });
   }
 }

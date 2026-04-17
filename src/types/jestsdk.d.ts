@@ -1,5 +1,4 @@
 /** --- This file is take from https://cdn.jest.com/sdk/latest/jestsdk.d.ts **/
-
 /**
  * Public SDK type definitions for game developers.
  *
@@ -66,26 +65,29 @@ interface JestSDK {
    */
   getEntryPayload(): Record<string, unknown>;
   /**
-   * Gets player info.
-   * @returns The player object.
+   * Gets player info
+   * @returns The player object
    * @throws {Error} If the player is not initialized.
    * @example
    * ```typescript
-   * const player = JestSDK.getPlayer();
+   * const player = sdk.getPlayer();
    * console.log(player.playerId);
    * ```
-   */
+   * */
   getPlayer(): {
     playerId: string;
     registered: boolean;
+    username: string | null;
+    avatarUrl: string | null;
   };
   /**
    * Gets signed player payload for server-side verification.
+   * @async
    * @returns A promise resolving to the public player payload and JWS signature.
    * @throws {Error} If the SDK is not initialized or the request fails.
    * @example
    * ```typescript
-   * const { player, playerSigned } = await JestSDK.getPlayerSigned();
+   * const { player, playerSigned } = await sdk.getPlayerSigned();
    * console.log(player.playerId, playerSigned);
    * ```
    */
@@ -93,6 +95,8 @@ interface JestSDK {
     player: {
       playerId: string;
       registered: boolean;
+      username: string | null;
+      avatarUrl: string | null;
     };
     playerSigned: string;
   }>;
