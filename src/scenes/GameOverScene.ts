@@ -4,6 +4,7 @@ import { scheduleRetentionSeries } from "../sdk/notifications";
 import { getReferralCount, shareGame } from "../sdk/referrals";
 
 const SCORE_THRESHOLD_FOR_REG_PROMPT = 5;
+const REG_PROMPT_COOLDOWN_GAMES = 5;
 const REFERRAL_REFERENCE = "share_score";
 
 export class GameOverScene extends Phaser.Scene {
@@ -113,18 +114,30 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   private maybePromptRegistration(): void {
-    const isFirstGame = this.gamesPlayed === 1;
     const hasMeaningfulScore =
       this.finalScore >= SCORE_THRESHOLD_FOR_REG_PROMPT;
-
-    if (isFirstGame && hasMeaningfulScore) {
-      // Pass context through the entry payload so the game can react
-      // appropriately when the player returns after registering.
-      promptLogin({
-        reason: "save_first_score",
-        score: this.finalScore,
-      });
+    if (!hasMeaningfulScore) {
+      return;
     }
+
+    // Prompt on the first meaningful game, then re-prompt every
+    // REG_PROMPT_COOLDOWN_GAMES meaningful games if the player declined.
+    // The platform's own autoLoginReminders handles longer-term nudging.
+    const lastPromptGame = (playerData.get("lastRegPromptGame") as number) ?? 0;
+    const isFirstPrompt = lastPromptGame === 0;
+    const gamesSincePrompt = this.gamesPlayed - lastPromptGame;
+
+    if (!isFirstPrompt && gamesSincePrompt < REG_PROMPT_COOLDOWN_GAMES) {
+      return;
+    }
+
+    playerData.set("lastRegPromptGame", this.gamesPlayed);
+    // Pass context through the entry payload so the game can react
+    // appropriately when the player returns after registering.
+    promptLogin({
+      reason: "save_first_score",
+      score: this.finalScore,
+    });
   }
 
   private async showReferralCount(x: number, y: number): Promise<void> {
