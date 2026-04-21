@@ -125,14 +125,10 @@ interface JestSDK {
     theme?: "light" | "dark";
     onClose?: () => void;
     entryPayload?: Record<string, unknown>;
-  }):
-    | {
-        loginButtonAction: () => void;
-        closeButtonAction: () => void;
-      }
-    | {
-        error: "could_not_acquire_lease";
-      };
+  }): {
+    loginButtonAction: () => void;
+    closeButtonAction: () => void;
+  };
   /**
    * Player data namespace - provides a cleaner API for data operations.
    */
