@@ -63,6 +63,7 @@ const RETENTION_SERIES = [
     identifier: "retention_d1",
     scheduledInDays: 1,
     priority: "high" as const,
+    assetReference: "score_challenge_v1",
     template: "score_challenge_v1",
     body: ({ score, playerName }: RetentionContext) =>
       `${playerName}, your high score of ${score} is under threat! Come defend it.`,
@@ -72,6 +73,7 @@ const RETENTION_SERIES = [
     identifier: "retention_d3",
     scheduledInDays: 3,
     priority: "medium" as const,
+    assetReference: "miss_you_v1",
     template: "miss_you_v1",
     body: ({ playerName }: RetentionContext) =>
       `Hey ${playerName}, the cats miss you! Your basket is gathering dust.`,
@@ -81,6 +83,7 @@ const RETENTION_SERIES = [
     identifier: "retention_d7",
     scheduledInDays: 7,
     priority: "low" as const,
+    assetReference: "weekly_reminder_v1",
     template: "weekly_reminder_v1",
     body: ({ score, playerName }: RetentionContext) =>
       `${playerName}, can you beat ${score}? New challengers are catching up!`,
@@ -107,6 +110,7 @@ export function scheduleRetentionSeries(context: RetentionContext): void {
       scheduledInDays: n.scheduledInDays,
       priority: n.priority,
       body: n.body(context),
+      assetReference: n.assetReference,
       ctaText: n.ctaText,
       entryPayload: {
         notification_template: n.template,
