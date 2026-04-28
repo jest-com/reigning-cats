@@ -13,6 +13,7 @@ export class GameScene extends Phaser.Scene {
 
   // HUD
   private scoreText!: Phaser.GameObjects.Text;
+  private bestText!: Phaser.GameObjects.Text;
   private livesText!: Phaser.GameObjects.Text;
 
   // Input keys
@@ -23,13 +24,13 @@ export class GameScene extends Phaser.Scene {
 
   // Game state
   private score = 0;
+  private bestScore = 0;
   private lives = 0;
   private slowDown = false;
   private catSpeed = 200;
   private spawnDelay = 2000;
   private isMobile = false;
 
-  // Cat name → file prefix (molly uses different naming than the others)
   private static readonly CATS: Record<string, string> = {
     bella: "bella-cat",
     black: "black-cat",
@@ -61,6 +62,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.score = 0;
+    this.bestScore = (playerData.get("highScore") as number) ?? 0;
     this.lives = 0;
     this.slowDown = false;
     this.catSpeed = 200;
@@ -103,6 +105,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.scoreText.setVisible(true);
+    this.bestText.setVisible(true);
     this.livesText.setText(`Lives: ${this.lives}`);
     this.livesText.setVisible(true);
     this.physics.resume();
@@ -150,6 +153,12 @@ export class GameScene extends Phaser.Scene {
     cat.destroy();
     this.score++;
     this.scoreText.setText(`Score: ${this.score}`);
+
+    // Show that the player is beating their best in real-time
+    if (this.score > this.bestScore) {
+      this.bestText.setText(`Best: ${this.score} (NEW!)`);
+      this.bestText.setColor("#1AFF44");
+    }
 
     // Ramp difficulty every 5 catches
     if (this.score % 5 === 0) {
@@ -424,6 +433,13 @@ export class GameScene extends Phaser.Scene {
     this.scoreText = this.add.text(30, 30, "Score: 0", style);
     this.scoreText.setVisible(false);
 
+    this.bestText = this.add.text(30, 65, `Best: ${this.bestScore}`, {
+      ...style,
+      fontSize: "18px",
+      color: "#ffff00",
+    });
+    this.bestText.setVisible(false);
+
     this.livesText = this.add.text(
       this.scale.width - 30,
       30,
@@ -463,7 +479,7 @@ export class GameScene extends Phaser.Scene {
     this.applyReferrerWelcome(entry);
 
     // Prefer the platform username for registered players; fall back
-    // to a saved custom name, or prompt the player to enter one
+    // to a saved custom name or prompt the player to enter one
     const resolvedName =
       player.username ??
       (playerData.get("playerName") as string | undefined) ??

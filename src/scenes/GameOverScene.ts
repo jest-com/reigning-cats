@@ -87,9 +87,10 @@ export class GameOverScene extends Phaser.Scene {
     });
 
     if (isRegistered()) {
-      // Schedule a personalized D1/D3/D7 retention series
+      // Schedule a personalized D1/D3/D7 retention series tied to the
+      // player's current high score
       scheduleRetentionSeries({
-        score: this.finalScore,
+        score: highScore,
         playerName: this.playerName,
       });
 
