@@ -31,26 +31,6 @@ export function isRegistered(): boolean {
 }
 
 /**
- * Returns a signed payload (JWS) for server-side player verification.
- * Verify the HS256 signature using your game's shared secret
- * (base64-encoded, found in the Developer Console).
- *
- * The signed payload includes an issued-at (iat) timestamp;
- * reject tokens older than a chosen threshold on your server.
- */
-export async function getPlayerSigned(): Promise<{
-  player: {
-    playerId: string;
-    registered: boolean;
-    username: string | null;
-    avatarUrl: string | null;
-  };
-  playerSigned: string;
-}> {
-  return JestSDK.getPlayerSigned();
-}
-
-/**
  * Prompts a guest player to register or sign in via the
  * platform login flow (SMS / RCS). The player is redirected
  * back into the game after completing the flow.

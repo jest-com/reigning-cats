@@ -184,13 +184,13 @@ export class GameScene extends Phaser.Scene {
           this.livesText.setText(`Lives: ${this.lives}`);
           cat.destroy();
         } else {
-          this.gameOver();
+          void this.gameOver();
         }
       }
     });
   }
 
-  private gameOver(): void {
+  private async gameOver(): Promise<void> {
     this.catSpawnTimer.destroy();
     if (this.backgroundMusic?.isPlaying) {
       this.backgroundMusic.stop();
@@ -205,7 +205,9 @@ export class GameScene extends Phaser.Scene {
     }
     const gamesPlayed = ((playerData.get("gamesPlayed") as number) ?? 0) + 1;
     playerData.set("gamesPlayed", gamesPlayed);
-    playerData.flush();
+    // Flush before transitioning so a tab-close mid-transition doesn't lose
+    // the new highScore / gamesPlayed.
+    await playerData.flush();
 
     const playerName = (playerData.get("playerName") as string) ?? "Player 1";
     this.scene.start("GameOverScene", {
@@ -478,10 +480,16 @@ export class GameScene extends Phaser.Scene {
     // Greet players who entered via a referral link
     this.applyReferrerWelcome(entry);
 
-    // Prefer the platform username for registered players; fall back
-    // to a saved custom name or prompt the player to enter one
+    // Prefer the platform username for registered players, then any
+    // customName collected by a Jest onboarding flow, then a previously
+    // saved name. If none of those are available, prompt the player.
+    const customNameFromOnboarding =
+      typeof entry.customName === "string" && entry.customName.length > 0
+        ? entry.customName
+        : null;
     const resolvedName =
       player.username ??
+      customNameFromOnboarding ??
       (playerData.get("playerName") as string | undefined) ??
       null;
 

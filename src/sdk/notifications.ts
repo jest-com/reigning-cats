@@ -55,65 +55,135 @@ export function unscheduleNotification(identifier: string): void {
 // Each notification carries an entryPayload with a template ID
 // and day offset so the game can track which messages drive
 // player returns (see getEntryPayload() on re-entry).
+//
+// Each slot has a small bank of body variants. We pick one at
+// scheduling time so engaged players who return often don't
+// receive the exact same reminder over and over (the "Inbox
+// Groundhog Day" trap described in
+// https://docs.jest.com/guides/notifications#beware-of-the-inbox-groundhog-day-trap).
 
 type RetentionContext = { score: number; playerName: string };
 
+type RetentionVariant = {
+  template: string;
+  body: (ctx: RetentionContext) => string;
+  ctaText: string;
+};
+
+// Each slot references a single image, scoped by intent. Upload one image
+// per reference in the Developer Console (under Manage Images) and submit
+// for approval to enable rich notifications. If a reference is missing,
+// invalid, or unapproved, the platform automatically falls back to the
+// game's Hero image — so leaving them unconfigured is safe.
 const RETENTION_SERIES = [
   {
     identifier: "retention_d1",
     scheduledInDays: 1,
     priority: "high" as const,
-    assetReference: "score_challenge_v1",
-    template: "score_challenge_v1",
-    body: ({ score, playerName }: RetentionContext) =>
-      `${playerName}, your high score of ${score} is under threat! Come defend it.`,
-    ctaText: "Play Now",
+    imageReference: "notif_score_challenge",
+    variants: [
+      {
+        template: "score_challenge_v1",
+        body: ({ score, playerName }: RetentionContext) =>
+          `${playerName}, your high score of ${score} is under threat! Come defend it.`,
+        ctaText: "Play Now",
+      },
+      {
+        template: "score_challenge_v2",
+        body: ({ playerName }: RetentionContext) =>
+          `Your basket misses you, ${playerName}. The throne is wobbling.`,
+        ctaText: "Defend",
+      },
+      {
+        template: "score_challenge_v3",
+        body: ({ score, playerName }: RetentionContext) =>
+          `${playerName}, can ${score} hold the line? One run to find out.`,
+        ctaText: "Try again",
+      },
+    ] satisfies RetentionVariant[],
   },
   {
     identifier: "retention_d3",
     scheduledInDays: 3,
     priority: "medium" as const,
-    assetReference: "miss_you_v1",
-    template: "miss_you_v1",
-    body: ({ playerName }: RetentionContext) =>
-      `Hey ${playerName}, the cats miss you! Your basket is gathering dust.`,
-    ctaText: "Play Again",
+    imageReference: "notif_miss_you",
+    variants: [
+      {
+        template: "miss_you_v1",
+        body: ({ playerName }: RetentionContext) =>
+          `Hey ${playerName}, the cats miss you! Your basket is gathering dust.`,
+        ctaText: "Play Again",
+      },
+      {
+        template: "miss_you_v2",
+        body: ({ playerName }: RetentionContext) =>
+          `${playerName}, the alley's quiet without you. Pop in for a quick run.`,
+        ctaText: "Come back",
+      },
+      {
+        template: "miss_you_v3",
+        body: ({ playerName }: RetentionContext) =>
+          `The cats are restless, ${playerName}. Grab the basket.`,
+        ctaText: "Open",
+      },
+    ] satisfies RetentionVariant[],
   },
   {
     identifier: "retention_d7",
     scheduledInDays: 7,
     priority: "low" as const,
-    assetReference: "weekly_reminder_v1",
-    template: "weekly_reminder_v1",
-    body: ({ score, playerName }: RetentionContext) =>
-      `${playerName}, can you beat ${score}? New challengers are catching up!`,
-    ctaText: "Play",
+    imageReference: "notif_weekly_reminder",
+    variants: [
+      {
+        template: "weekly_reminder_v1",
+        body: ({ score, playerName }: RetentionContext) =>
+          `${playerName}, can you beat ${score}? New challengers are catching up!`,
+        ctaText: "Play",
+      },
+      {
+        template: "weekly_reminder_v2",
+        body: ({ score, playerName }: RetentionContext) =>
+          `Weekly check-in, ${playerName}. ${score} could use a refresh.`,
+        ctaText: "Refresh it",
+      },
+      {
+        template: "weekly_reminder_v3",
+        body: ({ score, playerName }: RetentionContext) =>
+          `${playerName}, one week, one run. ${score} is yours to top.`,
+        ctaText: "One run",
+      },
+    ] satisfies RetentionVariant[],
   },
 ];
+
+function pickVariant(variants: RetentionVariant[]): RetentionVariant {
+  return variants[Math.floor(Math.random() * variants.length)] ?? variants[0]!;
+}
 
 /**
  * Schedules a D1 / D3 / D7 retention notification series.
  *
  * Each notification uses fuzzy scheduling (scheduledInDays) so
- * the platform picks optimal delivery times per player. Messages
- * reference the player's name and score to feel personal rather
- * than generic.
+ * the platform picks optimal delivery times per player. For each
+ * slot we pick a body variant from a small bank so frequent
+ * returners don't see the same template every time.
  *
  * Each notification's entryPayload includes notification_template
- * and notification_offset so the game can attribute re-engagement
- * and A/B test different copy.
+ * (the specific variant chosen) and notification_offset, so the
+ * game can attribute re-engagement and A/B test variant copy.
  */
 export function scheduleRetentionSeries(context: RetentionContext): void {
   for (const n of RETENTION_SERIES) {
+    const variant = pickVariant(n.variants);
     JestSDK.notifications.scheduleNotification({
       identifier: n.identifier,
       scheduledInDays: n.scheduledInDays,
       priority: n.priority,
-      body: n.body(context),
-      assetReference: n.assetReference,
-      ctaText: n.ctaText,
+      imageReference: n.imageReference,
+      body: variant.body(context),
+      ctaText: variant.ctaText,
       entryPayload: {
-        notification_template: n.template,
+        notification_template: variant.template,
         notification_offset: `D${n.scheduledInDays}`,
       },
     });
