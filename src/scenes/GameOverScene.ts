@@ -1,7 +1,4 @@
-import * as playerData from "../sdk/data";
-import { isRegistered, promptLogin } from "../sdk/player";
-import { scheduleRetentionSeries } from "../sdk/notifications";
-import { getReferralCount, shareGame } from "../sdk/referrals";
+import { scheduleRetentionSeries } from "../retention";
 
 const SCORE_THRESHOLD_FOR_REG_PROMPT = 5;
 const REG_PROMPT_COOLDOWN_GAMES = 5;
@@ -63,7 +60,7 @@ export class GameOverScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     // Persisted high score (with a "NEW!" badge if applicable)
-    const highScore = (playerData.get("highScore") as number) ?? 0;
+    const highScore = (JestSDK.data.get("highScore") as number) ?? 0;
     const highScoreLabel = this.isNewHighScore
       ? `NEW High Score: ${highScore}`
       : `High Score: ${highScore}`;
@@ -86,7 +83,7 @@ export class GameOverScene extends Phaser.Scene {
       this.scene.start("GameScene");
     });
 
-    if (isRegistered()) {
+    if (JestSDK.getPlayer().registered) {
       // Schedule a personalized D1/D3/D7 retention series tied to the
       // player's current high score
       scheduleRetentionSeries({
@@ -96,7 +93,7 @@ export class GameOverScene extends Phaser.Scene {
 
       // Share button (referrals)
       this.createButton(centerX, centerY + 170, "Share", () => {
-        shareGame({
+        JestSDK.referrals.shareReferralLink({
           reference: REFERRAL_REFERENCE,
           shareTitle: "Reigning Cats",
           shareText: `I scored ${this.finalScore} in Reigning Cats! Can you beat me?`,
@@ -124,7 +121,8 @@ export class GameOverScene extends Phaser.Scene {
     // Prompt on the first meaningful game, then re-prompt every
     // REG_PROMPT_COOLDOWN_GAMES meaningful games if the player declined.
     // The platform's own autoLoginReminders handles longer-term nudging.
-    const lastPromptGame = (playerData.get("lastRegPromptGame") as number) ?? 0;
+    const lastPromptGame =
+      (JestSDK.data.get("lastRegPromptGame") as number) ?? 0;
     const isFirstPrompt = lastPromptGame === 0;
     const gamesSincePrompt = this.gamesPlayed - lastPromptGame;
 
@@ -132,18 +130,23 @@ export class GameOverScene extends Phaser.Scene {
       return;
     }
 
-    playerData.set("lastRegPromptGame", this.gamesPlayed);
+    JestSDK.data.set("lastRegPromptGame", this.gamesPlayed);
     // Pass context through the entry payload so the game can react
     // appropriately when the player returns after registering.
-    promptLogin({
-      reason: "save_first_score",
-      score: this.finalScore,
+    JestSDK.login({
+      entryPayload: {
+        reason: "save_first_score",
+        score: this.finalScore,
+      },
     });
   }
 
   private async showReferralCount(x: number, y: number): Promise<void> {
     try {
-      const count = await getReferralCount(REFERRAL_REFERENCE);
+      // referralsSigned is also returned for server-side verification
+      // — recommended before granting any reward in production.
+      const { referrals } = await JestSDK.referrals.listReferrals();
+      const count = (referrals[REFERRAL_REFERENCE] ?? []).length;
       if (count === 0) {
         return;
       }

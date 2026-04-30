@@ -1,16 +1,7 @@
-/** --- This file is take from https://cdn.jest.com/sdk/latest/jestsdk.d.ts **/
 /**
- * Public SDK type definitions for game developers.
+ * Data structure for a purchase, documented for game use.
  *
- * This file is the entry point for generating the bundled jestsdk.d.ts
- * that ships alongside the SDK on the CDN. It contains only the public
- * API surface — no internal methods, no deprecated APIs, no zod.
- *
- * Sync with the real JestSDK interface is enforced at compile time
- * by public-types.check.ts.
- */
-/**
- * Purchase data returned by the payments API.
+ * Because intended consumer is the game, we use decimal credits.
  */
 type PurchaseData = {
   purchaseToken: string;
@@ -20,14 +11,480 @@ type PurchaseData = {
   completedAt: number | null;
   estimatedRevenue: number;
 };
-/**
- * Notification priority levels.
- */
+
 type NotificationPriority = "low" | "medium" | "high" | "critical";
+
 /**
- * The JestSDK singleton type, including the `init` method.
+ * Player data — a simple key-value store for per-player state,
+ * persisted across sessions and devices.
+ *
+ * Use this when your game does not have its own backend. Data is
+ * stored alongside the player record on the Jest platform.
+ *
+ * Constraints:
+ * - Values must be JSON-serializable.
+ * - Limited to 1 MB per game per player; further writes fail
+ *   until the stored data size is reduced.
+ * - Written directly from the client — do NOT store sensitive
+ *   information or data requiring strong security guarantees.
+ * - Writes are batched. Use `flush()` to force an immediate sync.
+ *
+ * Docs: https://docs.jest.com/sdk/html5/player#player-data
  */
+interface PlayerDataModule {
+  /**
+   * Returns the value for a key, or `undefined` if not set.
+   *
+   * @throws {Error} If the SDK is not initialized.
+   */
+  get(key: string): unknown;
+  /**
+   * Returns a snapshot of all player data.
+   *
+   * Modifying the returned object does NOT update stored data;
+   * use `set()` to write back.
+   *
+   * @throws {Error} If the SDK is not initialized.
+   */
+  getAll(): Record<string, unknown>;
+  /**
+   * Sets a single key-value pair.
+   *
+   * @throws {Error} If the SDK is not initialized.
+   */
+  set(key: string, value: unknown): void;
+  /**
+   * Shallow-merges multiple key-value pairs into player data.
+   *
+   * Existing keys not in `partial` are preserved. To remove a key,
+   * use `delete()` (or set its value to `undefined`).
+   *
+   * @throws {Error} If the SDK is not initialized.
+   * @example
+   * ```typescript
+   * JestSDK.data.set({ score: 100, level: 2 });
+   * ```
+   */
+  set(partial: Record<string, unknown>): void;
+  /**
+   * Deletes a key from player data.
+   *
+   * @throws {Error} If the SDK is not initialized.
+   */
+  delete(key: string): void;
+  /**
+   * Forces all pending writes to be persisted to the server.
+   *
+   * The SDK batches writes by default. Call this when data must
+   * be persisted right away (e.g. before navigating away from
+   * the game or ending a critical session).
+   *
+   * @throws {Error} If the SDK is not initialized.
+   */
+  flush(): Promise<void>;
+}
+/**
+ * Options for {@link NotificationsModule.scheduleNotification}.
+ *
+ * Provide exactly one of `scheduledAt` (exact time) or `scheduledInDays`
+ * (fuzzy timing).
+ */
+type ScheduleNotificationOptions = {
+  /**
+   * Stable identifier for this notification. Used to replace or
+   * unschedule it later. Scheduling with an existing identifier
+   * automatically replaces the previous notification.
+   */
+  identifier?: string;
+  /**
+   * Main body text of the notification.
+   */
+  body: string;
+  /**
+   * Optional title; rendered above the body where supported.
+   */
+  title?: string;
+  /**
+   * Call-to-action button label. Must be 1–25 characters.
+   */
+  ctaText: string;
+  /**
+   * Higher-priority notifications are weighted more heavily when
+   * the platform selects which notification to deliver per day.
+   * Defaults to `"low"`.
+   */
+  priority: NotificationPriority;
+  /**
+   * Reference to a pre-approved image from the Developer Console's
+   * Assets Library. Falls back to the game's Hero image if missing
+   * or unapproved.
+   */
+  assetReference?: string;
+  /**
+   * @deprecated Use {@link assetReference} instead.
+   */
+  imageReference?: string;
+  /**
+   * Optional metadata embedded into the notification's link.
+   * Available via `JestSDK.getEntryPayload()` when the player taps
+   * the notification.
+   */
+  entryPayload?: Record<string, unknown>;
+} & (
+  | {
+      /**
+       * Exact scheduled delivery time. Must be within the next 7 days.
+       * Use this for fixed events or deadlines.
+       */
+      scheduledAt: Date;
+      scheduledInDays?: never;
+    }
+  | {
+      scheduledAt?: never;
+      /**
+       * Days from now to deliver the notification (1–7, inclusive).
+       * The platform picks an optimal delivery time within that window
+       * for each player.
+       */
+      scheduledInDays: number;
+    }
+);
+/**
+ * Notifications — schedule SMS / RCS / Library re-engagement
+ * messages for the current player.
+ *
+ * Only registered players receive notifications. Check via
+ * `getPlayer().registered` before scheduling — calls for guest
+ * players are valid but won't be delivered.
+ *
+ * Delivery: scheduled notifications appear in the platform Library tab.
+ * Once per day the platform also selects at most one notification per
+ * user across all games to deliver as SMS/RCS, weighted by `priority`.
+ * Delivery time is platform-determined per user, respecting compliance
+ * (quiet hours, opt-outs).
+ *
+ * Jest handles consent, opt-outs, and messaging cost subsidization.
+ *
+ * Docs: https://docs.jest.com/sdk/html5/notifications
+ */
+interface NotificationsModule {
+  /**
+   * Schedules a notification for the current player.
+   *
+   * Provide either `scheduledAt` (exact time) or `scheduledInDays`
+   * (fuzzy timing — the platform picks an optimal delivery time per
+   * user), but not both.
+   *
+   * Scheduling with an existing `identifier` automatically replaces
+   * the previous notification — no need to unschedule first.
+   *
+   * Constraints (out-of-range values throw `INVALID_ARGUMENTS`):
+   * - `scheduledAt` must be within the next 7 days
+   * - `scheduledInDays` must be an integer 1–7 (inclusive)
+   * - `ctaText` must be 1–25 characters
+   *
+   * Use exact scheduling for fixed events/deadlines. Use fuzzy
+   * scheduling for time-of-day-flexible re-engagement (lets the
+   * platform optimize delivery).
+   *
+   * See {@link ScheduleNotificationOptions} for field-level docs.
+   *
+   * @throws {Error} If the SDK is not initialized or arguments are invalid.
+   * @example
+   * ```typescript
+   * // Fuzzy: platform picks optimal time within day 2
+   * JestSDK.notifications.scheduleNotification({
+   *   identifier: "retention_d2",
+   *   scheduledInDays: 2,
+   *   body: "Your crops are ready to harvest",
+   *   ctaText: "Play",
+   *   priority: "medium",
+   *   entryPayload: { source: "retention_d2" },
+   * });
+   * ```
+   */
+  scheduleNotification(options: ScheduleNotificationOptions): void;
+  /**
+   * Cancels a previously scheduled notification by identifier.
+   *
+   * Safe to call with an unknown identifier (no-op).
+   *
+   * @throws {Error} If the SDK is not initialized or arguments are invalid.
+   */
+  unscheduleNotification(options: { identifier: string }): void;
+}
+/**
+ * Referrals — invite friends via shareable links and track which
+ * conversions came from which campaign.
+ *
+ * Conversions are grouped by `reference`, a stable campaign key
+ * you choose (e.g. `"unlock_party_mode_v1"`, `"share_score"`).
+ * Only invited players who complete registration count.
+ *
+ * Both methods work for guest and registered players.
+ *
+ * For high-stakes rewards (entitlements, currency), verify
+ * `referralsSigned` server-side instead of trusting the client.
+ *
+ * Docs: https://docs.jest.com/sdk/html5/referrals
+ */
+interface ReferralsModule {
+  /**
+   * Returns all referral conversions for the current player,
+   * grouped by `reference`.
+   *
+   * @returns
+   * - `referrals` — map of reference → array of `{ playerId, joinedAt }`
+   *   (where `joinedAt` is an ISO 8601 timestamp).
+   * - `referralsSigned` — HS256 JWS for server-side verification,
+   *   signed with the game's shared secret. Verified payload shape:
+   *   `{ referrals, aud: gameId, sub: referrerPlayerId }`.
+   */
+  listReferrals: () => Promise<{
+    referrals: {
+      [reference: string]: {
+        playerId: string;
+        joinedAt: string;
+      }[];
+    };
+    referralsSigned: string;
+  }>;
+  /**
+   * Opens the platform share dialog with a referral link.
+   *
+   * Only opens the dialog — does NOT guarantee the player completes
+   * the share. The promise resolves once the dialog closes.
+   *
+   * @param opts.reference - Stable campaign key for grouping conversions
+   *   (e.g. `"unlock_party_mode_v1"`).
+   * @param opts.entryPayload - Metadata embedded into the shared link,
+   *   delivered to the invited player via `getEntryPayload()`.
+   *   Useful for attribution, custom invite context, etc.
+   * @param opts.shareTitle - Title shown in the share sheet (platform-dependent).
+   * @param opts.shareText - Body text shown in the share sheet.
+   * @param opts.onboardingSlug - Optional game slug to route invited
+   *   players through an onboarding game first.
+   * @returns `canceled: true` if the player dismissed the dialog.
+   *
+   * @example Share + check conversions later
+   * ```typescript
+   * // When the player taps "Invite friends":
+   * await JestSDK.referrals.shareReferralLink({
+   *   reference: "unlock_party_mode_v1",
+   *   shareTitle: "Come play this with me",
+   *   shareText: "Join me — I want to unlock Party Mode.",
+   * });
+   *
+   * // Later (e.g. on resume): check how many invites converted
+   * const { referrals } = await JestSDK.referrals.listReferrals();
+   * const inviteCount = (referrals["unlock_party_mode_v1"] ?? []).length;
+   * if (inviteCount >= 3) {
+   *   unlockPartyMode();
+   * }
+   * ```
+   *
+   * @throws {Error} If the SDK is not initialized or arguments are invalid.
+   */
+  shareReferralLink: (opts: {
+    reference: string;
+    entryPayload?: Record<string, unknown>;
+    shareTitle?: string;
+    shareText?: string;
+    onboardingSlug?: string;
+  }) => Promise<{
+    canceled: boolean;
+  }>;
+}
+/**
+ * Payments — sell in-game products for Jest Tokens.
+ *
+ * Players buy Jest Tokens on the platform (1 token = $1 USD) and
+ * spend them on products you configure in the Developer Console.
+ * Jest handles checkout and ensures the player has sufficient
+ * tokens, prompting them to top up if needed.
+ *
+ * **Purchase lifecycle:**
+ * 1. List products via {@link PaymentsModule.getProducts | getProducts}.
+ * 2. Start checkout via {@link PaymentsModule.beginPurchase | beginPurchase}.
+ * 3. Grant the item to the player.
+ * 4. Confirm via {@link PaymentsModule.completePurchase | completePurchase}.
+ * 5. On startup, recover incomplete purchases via {@link PaymentsModule.getIncompletePurchases | getIncompletePurchases}.
+ *
+ * **Critical: always grant before confirming.** If the game crashes
+ * after confirming but before granting, the purchase can't be
+ * recovered (it's no longer incomplete).
+ *
+ * **Server-side verification (recommended):** for any grant that
+ * affects entitlements or currency, send `purchaseSigned` /
+ * `purchasesSigned` to your backend, verify the HS256 JWS with your
+ * shared secret, and use `purchaseToken` as an idempotency key.
+ *
+ * **Sandbox testing:** when using a sandbox user, product prices
+ * are automatically discounted to 0.
+ *
+ * Docs: https://docs.jest.com/sdk/html5/payments
+ */
+interface PaymentsModule {
+  /**
+   * Lists products available for purchase, configured in the
+   * Developer Console.
+   *
+   * @returns Array of `{ sku, name, description, price }` where
+   *   `price` is in Jest Tokens (1 token = $1 USD).
+   * @throws {Error} If the SDK is not initialized or the request fails.
+   */
+  getProducts(): Promise<
+    Array<{
+      sku: string;
+      name: string;
+      description: string | null;
+      price: number;
+    }>
+  >;
+  /**
+   * Starts the platform checkout flow for a product.
+   *
+   * On success, the returned purchase is **incomplete** — your game
+   * must grant the item and then call `completePurchase`.
+   *
+   * @param options.productSku - SKU from `getProducts()`.
+   * @returns One of:
+   * - `{ result: "success", purchase, purchaseSigned }` — checkout
+   *   completed. Use `purchaseSigned` for server-side verification.
+   * - `{ result: "cancel" }` — player canceled the flow.
+   * - `{ result: "error", error: "internal_error" }` — transient;
+   *   safe to retry.
+   * - `{ result: "error", error: "invalid_product" }` — SKU not
+   *   available; do NOT retry with the same SKU.
+   *
+   * May also throw on transient errors (e.g. timeout) — treat
+   * thrown errors as retryable.
+   *
+   * @example Full purchase flow (grant before confirm)
+   * ```typescript
+   * const result = await JestSDK.payments.beginPurchase({
+   *   productSku: "powerup_pack_1",
+   * });
+   *
+   * if (result.result !== "success") {
+   *   if (result.result === "error") {
+   *     console.error("Purchase failed:", result.error);
+   *   }
+   *   return;
+   * }
+   *
+   * // Recommended: send result.purchaseSigned to your backend to verify
+   * // and grant. Use result.purchase.purchaseToken as an idempotency key.
+   * await grantItem(result.purchase.productSku);
+   *
+   * // Only confirm AFTER granting succeeded.
+   * await JestSDK.payments.completePurchase({
+   *   purchaseToken: result.purchase.purchaseToken,
+   * });
+   * ```
+   *
+   * @throws {Error} If the SDK is not initialized or arguments are invalid.
+   */
+  beginPurchase(options: { productSku: string }): Promise<
+    | {
+        result: "success";
+        purchase: PurchaseData;
+        purchaseSigned: string;
+      }
+    | {
+        result: "cancel";
+      }
+    | {
+        result: "error";
+        error: "internal_error" | "invalid_product";
+      }
+  >;
+  /**
+   * Confirms a purchase, marking it complete on the platform.
+   *
+   * **Only call this AFTER the item has been durably granted.**
+   * If you confirm first and crash before granting, the purchase
+   * can't be recovered.
+   *
+   * @param options.purchaseToken - Token from `beginPurchase` or
+   *   `getIncompletePurchases`.
+   * @returns `{ result: "success" }` or:
+   * - `error: "internal_error"` — transient; retry later. Leaving
+   *   the purchase incomplete is safe; it will reappear in
+   *   `getIncompletePurchases`.
+   * - `error: "invalid_token"` — already confirmed, wrong player,
+   *   etc. Do NOT retry with the same token.
+   *
+   * @throws {Error} If the SDK is not initialized or arguments are invalid.
+   */
+  completePurchase(options: { purchaseToken: string }): Promise<
+    | {
+        result: "success";
+      }
+    | {
+        result: "error";
+        error: "internal_error" | "invalid_token";
+      }
+  >;
+  /**
+   * Returns purchases that started checkout but were never confirmed.
+   *
+   * **Call this on every startup** to handle purchases that succeeded
+   * at checkout but never reached `completePurchase` (e.g. due to a
+   * crash, network failure, or app close).
+   *
+   * For each returned purchase: grant the item (using `productSku`),
+   * then call `completePurchase`. The response is capped at 50
+   * purchases — if `hasMore` is true, call again until it's false.
+   *
+   * Use `purchasesSigned` for server-side verification before granting.
+   *
+   * @example Recovery loop on startup
+   * ```typescript
+   * let hasMore = true;
+   * while (hasMore) {
+   *   const result = await JestSDK.payments.getIncompletePurchases();
+   *
+   *   for (const purchase of result.purchases) {
+   *     // Recommended: verify result.purchasesSigned on your backend
+   *     await grantItem(purchase.productSku);
+   *
+   *     await JestSDK.payments.completePurchase({
+   *       purchaseToken: purchase.purchaseToken,
+   *     });
+   *   }
+   *
+   *   hasMore = result.hasMore;
+   * }
+   * ```
+   */
+  getIncompletePurchases(): Promise<{
+    hasMore: boolean;
+    purchases: Array<PurchaseData>;
+    purchasesSigned: string;
+  }>;
+}
 type Jest = JestSDK & {
+  /**
+   * Initializes the SDK. Must be called before any other SDK method.
+   * Safe to call multiple times — subsequent calls return the same
+   * ready promise.
+   *
+   * @example Typical app startup
+   * ```typescript
+   * await JestSDK.init();
+   *
+   * const player = JestSDK.getPlayer();
+   * if (!player.registered) {
+   *   // Optionally prompt registration at the right moment
+   * }
+   *
+   * // Recover any purchases from a previous session that crashed
+   * await recoverPurchasesOnStartup();
+   *
+   * startGame();
+   * ```
+   */
   init: (opts?: {
     /**
      * When set to false, disables the automatic login reminder popups that appear
@@ -35,45 +492,77 @@ type Jest = JestSDK & {
      * is unaffected. Defaults to true.
      */
     autoLoginReminders?: boolean;
+    /**
+     * @deprecated mock is no longer used - it is automatically determined based on whether the app is run inside Jest or as standalone.
+     */
+    mock?: boolean;
   }) => Promise<void>;
 };
 /**
- * The public JestSDK interface available to game developers.
+ * The JestSDK runtime API, exposed as a global when the SDK script is
+ * loaded from `https://cdn.jest.com/sdk/latest/jestsdk.js`.
+ *
+ * Call {@link Jest.init} once on startup, then use the methods below to
+ * interact with the player, schedule notifications, sell products, and
+ * track referrals. Most methods throw if called before initialization.
+ *
+ * Docs: https://docs.jest.com/sdk/html5
  */
 interface JestSDK {
   /**
-   * Waits for the SDK to be fully initialized with player data.
+   * Resolves once the SDK is fully initialized and player data is loaded.
    *
-   * @returns A promise that resolves when the player is set.
-   * @throws {Error} If initialization times out or the SDK is not initialized.
+   * `init()` already returns this promise — call `isReady()` only when
+   * you need to await initialization from a different code path that
+   * doesn't have access to the original `init()` promise.
+   *
+   * @throws {Error} If initialization times out or the SDK was never initialized.
    */
   isReady(): Promise<void>;
   /**
-   * Returns the payload associated with this entry into the game.
+   * Returns the entry payload for this game session, or an empty object
+   * if no payload was supplied.
    *
-   * The payload is included in the link that the player entered the game from and is attached by the sender.
-   * That can be a reminder link sent to the player's inbox or a referral link shared with a friend.
-   * It can also be attached by the onboarding game associated with the title, if such exists.
+   * The entry payload is arbitrary metadata attached to the link the
+   * player used to enter the game. Common sources include:
+   * - Referral links (from `referrals.shareReferralLink`)
+   * - Notification links (from `notifications.scheduleNotification`)
+   * - Onboarding game handoffs
    *
-   * @returns The entry payload as a JSON object.
+   * Typical use cases: difficulty selection, referral attribution,
+   * restoring context after registration, A/B test variants.
+   *
+   * @returns The entry payload as a JSON object (always a `Record`, never null).
    * @throws {Error} If the SDK is not initialized.
    * @example
    * ```typescript
    * const payload = JestSDK.getEntryPayload();
-   * console.log(payload.referralCode);
+   * const difficulty = payload.difficulty ?? "normal";
    * ```
    */
   getEntryPayload(): Record<string, unknown>;
   /**
-   * Gets player info
-   * @returns The player object
-   * @throws {Error} If the player is not initialized.
+   * Returns the current player's identity.
+   *
+   * Each player has a `playerId` that is stable per-game and persists
+   * across sessions and devices, including when a guest later registers.
+   * Use this to key your own player state.
+   *
+   * - `registered: false` — guest player. Cannot receive notifications.
+   *   Prompt registration via `login()` or `showRegistrationOverlay()`.
+   * - `registered: true` — has a Jest account. `username` and `avatarUrl`
+   *   are platform values you may use in your UI.
+   *
+   * @returns The player object. `username`/`avatarUrl` are `null` for guests.
+   * @throws {Error} If the SDK is not initialized.
    * @example
    * ```typescript
-   * const player = sdk.getPlayer();
-   * console.log(player.playerId);
+   * const player = JestSDK.getPlayer();
+   * if (!player.registered) {
+   *   // Guest — consider prompting registration
+   * }
    * ```
-   * */
+   */
   getPlayer(): {
     playerId: string;
     registered: boolean;
@@ -81,15 +570,44 @@ interface JestSDK {
     avatarUrl: string | null;
   };
   /**
-   * Gets signed player payload for server-side verification.
-   * @async
-   * @returns A promise resolving to the public player payload and JWS signature.
-   * @throws {Error} If the SDK is not initialized or the request fails.
-   * @example
-   * ```typescript
-   * const { player, playerSigned } = await sdk.getPlayerSigned();
-   * console.log(player.playerId, playerSigned);
+   * Returns a signed player payload for server-side verification.
+   *
+   * Use this when your game has a backend and needs to authenticate
+   * the player for server requests. `playerSigned` is a JWS (HS256)
+   * signed with your game's shared secret (configured in the Developer
+   * Console → Games → Secrets).
+   *
+   * Verify it on your backend with any standard JWT library. The
+   * decoded payload has the shape:
+   * ```ts
+   * {
+   *   player: { playerId, registered, username, avatarUrl };
+   *   iat: number;  // issued-at timestamp
+   *   aud: string;  // game id
+   *   sub: string;  // player id
+   * }
    * ```
+   *
+   * Jest does not set an explicit expiration; reject tokens older than
+   * a chosen threshold (e.g. 24h) and request a new one when needed.
+   *
+   * Works for both registered and guest players.
+   *
+   * Docs: https://docs.jest.com/sdk/html5/player#jestsdkgetplayersigned
+   *
+   * @example Authenticate a backend request
+   * ```typescript
+   * const { playerSigned } = await JestSDK.getPlayerSigned();
+   * await fetch("/api/save-progress", {
+   *   method: "POST",
+   *   headers: { authorization: `Bearer ${playerSigned}` },
+   *   body: JSON.stringify({ score: 1500 }),
+   * });
+   * // Server verifies playerSigned (HS256, game's shared secret)
+   * // before trusting the request.
+   * ```
+   *
+   * @throws {Error} If the SDK is not initialized or the request fails.
    */
   getPlayerSigned(): Promise<{
     player: {
@@ -101,24 +619,76 @@ interface JestSDK {
     playerSigned: string;
   }>;
   /**
-   * Reports loading progress to the platform loading screen overlay.
-   * Only works when the game's loading screen mode is set to "manual" in the management console.
-   * The overlay is shown automatically when the game loads in manual mode.
-   * @param progress - Loading progress from 0 to 100. Setting progress to 100 dismisses the overlay.
+   * Reports loading progress (0–100) to the platform loading overlay.
+   *
+   * Only takes effect when the game's loading screen mode is set to
+   * "Manual" in the Developer Console. In Manual mode, the overlay is
+   * shown automatically on game entry; the game is responsible for
+   * progress and dismissal.
+   *
+   * - Values outside 0–100 are clamped; non-integers are rounded.
+   * - Reaching 100 dismisses the overlay with a fade-out.
+   * - Safety timeout: if no progress update is received for 15 seconds,
+   *   the platform exits the player to the home screen. Each call
+   *   resets this timer.
+   *
+   * Docs: https://docs.jest.com/sdk/html5/loading-screen
+   *
+   * @param progress - Loading progress from 0 to 100.
    */
   setLoadingProgress(progress: number): void;
   /**
-   * Initiates a login flow with a registration code.
-   * @param opts - Configuration for the login prompt.
-   * @param opts.entryPayload - Optional additional data to include in the entry payload. This will be accessible as `getEntryPayload()` after login.
-   * @throws {Error} If the SDK is not initialized or arguments are invalid.
+   * Opens the platform's built-in registration popup.
+   *
+   * The flow is completed via SMS/RCS, then the player is redirected
+   * back into the game. Converting guests to registered players is
+   * critical for retention — registered players can receive
+   * notifications and won't lose progress when the session ends.
+   *
+   * Use this for the simplest integration; use
+   * {@link showRegistrationOverlay} for a fully custom UI.
+   *
+   * The platform also triggers automatic registration prompts at
+   * escalating intervals; opt out via `init({ autoLoginReminders: false })`.
+   *
+   * @param opts.entryPayload - Optional metadata embedded in the login link.
+   *   Available via {@link getEntryPayload} after the player returns.
+   *   Useful for tracking where login was initiated.
+   * @throws {Error} If the SDK is not initialized, the player is already
+   *   registered, or the entry payload is invalid.
    */
   login(opts?: { entryPayload?: Record<string, unknown> }): void;
   /**
-   * Shows the registration overlay.
-   * @param opts - Configuration for the registration overlay.
-   * @param opts.onClose - Callback function to be executed when the overlay is closed.
-   * @param opts.entryPayload - Optional additional data to include in the entry payload. This will be accessible as `getEntryPayload()` after registration.
+   * Shows a minimal registration overlay and returns action handlers
+   * for the game to wire into its own UI.
+   *
+   * This is the customizable alternative to {@link login}. The platform
+   * still renders the required legal text and a close button, but the
+   * game owns the rest of the UI (e.g. positioning, copy, buttons).
+   *
+   * @param opts.theme - "light" or "dark". Defaults to "dark".
+   * @param opts.onClose - Called when the overlay is dismissed
+   *   (either via the built-in close button or `closeButtonAction`).
+   * @param opts.entryPayload - Optional metadata embedded in the login
+   *   link, available via {@link getEntryPayload} after registration.
+   * @returns Two functions to wire into your in-game UI:
+   *   - `loginButtonAction()` — starts the platform login flow
+   *   - `closeButtonAction()` — closes the overlay
+   *
+   * @example Wire actions to in-game UI
+   * ```typescript
+   * if (!JestSDK.getPlayer().registered) {
+   *   const { loginButtonAction, closeButtonAction } =
+   *     JestSDK.showRegistrationOverlay({
+   *       theme: "light",
+   *       onClose: () => closeGamePopup(),
+   *     });
+   *
+   *   myLoginButton.onclick = loginButtonAction;
+   *   myCloseButton.onclick = closeButtonAction;
+   * }
+   * ```
+   *
    * @throws {Error} If the SDK is not initialized or arguments are invalid.
    */
   showRegistrationOverlay(opts?: {
@@ -130,270 +700,44 @@ interface JestSDK {
     closeButtonAction: () => void;
   };
   /**
-   * Player data namespace - provides a cleaner API for data operations.
+   * Records a custom analytics event for the current player.
+   *
+   * Events are visible in the Developer Console and can be used to
+   * track in-game milestones, funnel steps, and feature usage.
+   *
+   * Property values should be JSON-serializable primitives or simple
+   * objects. Avoid storing PII or sensitive data in event properties.
+   *
+   * @param eventName - Name of the event (e.g. `"level_complete"`).
+   *   Use stable, lowercase, snake_case names.
+   * @param properties - Optional structured data attached to the event
+   *   (e.g. `{ level: 5, score: 1200 }`).
+   * @throws {Error} If the SDK is not initialized or arguments are invalid.
    */
-  data: {
-    /**
-     * Gets a single value from player data.
-     * @param key - The key to retrieve.
-     * @returns The value, or undefined if not found.
-     * @throws {Error} If the player is not initialized.
-     * @example
-     * ```typescript
-     * const score = JestSDK.data.get("score");
-     * ```
-     */
-    get(key: string): unknown;
-    /**
-     * Gets all player data.
-     * @returns A shallow copy of all player data.
-     * @throws {Error} If the player is not initialized.
-     * @example
-     * ```typescript
-     * const allData = JestSDK.data.getAll();
-     * ```
-     */
-    getAll(): Record<string, unknown>;
-    /**
-     * Sets a single value in player data.
-     * @param key - The key to set.
-     * @param value - The value to store.
-     * @throws {Error} If the player is not initialized.
-     * @example
-     * ```typescript
-     * JestSDK.data.set("score", 100);
-     * ```
-     */
-    set(key: string, value: unknown): void;
-    /**
-     * Sets multiple values in player data.
-     * @param partial - An object with key-value pairs to merge.
-     * @throws {Error} If the player is not initialized.
-     * @example
-     * ```typescript
-     * JestSDK.data.set({ score: 100, level: 2 });
-     * ```
-     */
-    set(partial: Record<string, unknown>): void;
-    /**
-     * Deletes a key from player data (sets it to undefined).
-     * @param key - The key to delete.
-     * @throws {Error} If the player is not initialized.
-     * @example
-     * ```typescript
-     * JestSDK.data.delete("tempData");
-     * ```
-     */
-    delete(key: string): void;
-    /**
-     * Waits for all pending data updates to be saved by the server.
-     * @returns Promise that resolves when all updates are acknowledged.
-     * @throws {Error} If the player is not initialized.
-     * @example
-     * ```typescript
-     * JestSDK.data.set("score", 100);
-     * await JestSDK.data.flush();
-     * ```
-     */
-    flush(): Promise<void>;
-  };
-  /**
-   * Notifications API namespace.
-   */
-  notifications: {
-    /**
-     * Schedules a notification with rich content including images.
-     * Note: notifications can only be scheduled up to 7 days ahead. `scheduledInDays` must be between 1 and 7 (inclusive), and `scheduledAt` must be within the next 7 days; out-of-range values throw.
-     * @param options - Notification details.
-     * @param options.scheduledAt - When to send the notification (exact time, must be within the next 7 days). Mutually exclusive with scheduledInDays.
-     * @param options.scheduledInDays - Days from now to send the notification (1-7, fuzzy timing). Mutually exclusive with scheduledAt.
-     * @param options.assetReference - Optional reference to an asset from the Assets Library (e.g., "my-asset-reference"). If omitted, the game's hero image will be used when available.
-     * @param options.imageReference - @deprecated Use assetReference instead.
-     * @param options.body - Main body text of the notification.
-     * @param options.ctaText - Call-to-action button text.
-     * @param options.priority - Priority level of the notification ("low", "medium", or "high"). Defaults to "low".
-     * @param options.identifier - Unique identifier for the notification.
-     * @param options.entryPayload - Optional payload data accessible when the notification is clicked.
-     * @throws {Error} If the SDK is not initialized or arguments are invalid.
-     * @example
-     * ```typescript
-     * // Using exact time
-     * JestSDK.notifications.scheduleNotification({
-     *   scheduledAt: new Date(Date.now() + 60000),
-     *   body: "Check out the latest updates in the game",
-     *   ctaText: "Play Now",
-     *   priority: "high",
-     *   identifier: "daily-reminder"
-     * });
-     *
-     * // Using days (fuzzy timing)
-     * JestSDK.notifications.scheduleNotification({
-     *   scheduledInDays: 2,
-     *   body: "Your crops are ready to harvest",
-     *   ctaText: "Play Now",
-     *   priority: "medium",
-     *   identifier: "retention-reminder"
-     * });
-     * ```
-     */
-    scheduleNotification(
-      options: {
-        assetReference?: string;
-        /** @deprecated Use assetReference instead */
-        imageReference?: string;
-        body: string;
-        title?: string;
-        ctaText: string;
-        priority: NotificationPriority;
-        identifier?: string;
-        entryPayload?: Record<string, unknown>;
-      } & (
-        | {
-            scheduledAt: Date;
-            scheduledInDays?: never;
-          }
-        | {
-            scheduledAt?: never;
-            scheduledInDays: number;
-          }
-      ),
-    ): void;
-    /**
-     * Unschedules a previously scheduled notification using the identifier.
-     * @param options - Unschedule options.
-     * @param options.identifier - The identifier used when scheduling the notification.
-     * @throws {Error} If the SDK is not initialized or arguments are invalid.
-     */
-    unscheduleNotification(options: { identifier: string }): void;
-  };
-  /**
-   * Referrals API namespace for managing referral links and tracking conversions.
-   */
-  referrals: {
-    /**
-     * Returns all referral links for the current player along with their conversions.
-     * Works for both registered users and guest players (no login required).
-     *
-     * @returns An object containing:
-     * - `referrals` — a map keyed by reference string, where each value is an array of
-     *   referred players with their `playerId` and `joinedAt` (ISO 8601) timestamp.
-     * - `referralsSigned` — a JWS-signed version of the referrals map for server-side verification.
-     */
-    listReferrals: () => Promise<{
-      referrals: {
-        [reference: string]: {
-          playerId: string;
-          joinedAt: string;
-        }[];
-      };
-      referralsSigned: string;
-    }>;
-    /**
-     * Opens the platform share dialog to share a referral link.
-     * Works for both registered users and guest players (no login required).
-     *
-     * @param opts - Referral dialog options.
-     * @param opts.reference - A unique identifier for this referral link (e.g. a campaign name).
-     * @param opts.entryPayload - Optional payload attached to the referral link, passed to referred players on entry.
-     * @param opts.shareTitle - Optional title for the share dialog.
-     * @param opts.shareText - Optional text for the share dialog.
-     * @param opts.onboardingSlug - Optional game slug to redirect referred users to an onboarding game first.
-     * @returns A promise that resolves with whether the dialog was canceled by the user.
-     * @throws {Error} If the SDK is not initialized or arguments are invalid.
-     */
-    shareReferralLink: (opts: {
-      reference: string;
-      entryPayload?: Record<string, unknown>;
-      shareTitle?: string;
-      shareText?: string;
-      onboardingSlug?: string;
-    }) => Promise<{
-      canceled: boolean;
-    }>;
-  };
-  /**
-   * Payments API namespace for in-app purchases.
-   */
-  payments: {
-    /**
-     * Retrieves the list of available products for the current game.
-     *
-     * @returns A promise that resolves with an array of products.
-     * @throws {Error} If the SDK is not initialized or the request fails.
-     * @example
-     * ```typescript
-     * const products = await JestSDK.payments.getProducts();
-     * products.forEach(product => {
-     *   console.log(`${product.name}: $${product.price / 100}`);
-     * });
-     * ```
-     */
-    getProducts(): Promise<
-      Array<{
-        sku: string;
-        name: string;
-        description: string | null;
-        price: number;
-      }>
-    >;
-    /**
-     * Begins a platform purchase flow for the specified product.
-     *
-     * @param options - Purchase configuration.
-     * @param options.productSku - The ID of the product to purchase.
-     * @returns A promise that resolves with the purchase result containing a purchase token on success.
-     * @throws {Error} If the SDK is not initialized or arguments are invalid.
-     * @example
-     * ```typescript
-     * const result = await JestSDK.payments.beginPurchase({
-     *   productSku: "powerup-pack-1",
-     * });
-     * if (result.result === "success") {
-     *   console.log('Purchase completed with token:', result.purchaseToken);
-     * }
-     * ```
-     */
-    beginPurchase(options: { productSku: string }): Promise<
-      | {
-          result: "success";
-          purchase: PurchaseData;
-          purchaseSigned: string;
-        }
-      | {
-          result: "cancel";
-        }
-      | {
-          result: "error";
-          error: "internal_error" | "invalid_product";
-        }
-    >;
-    /**
-     * Complete a purchase, recording receipt.
-     *
-     * @param options - Completion info.
-     * @param options.purchaseToken - Returned from `beginPurchase`.
-     * @returns A promise with a result of the completion attempt. If unsuccessful, result property will be "error" and error will contain a reason.
-     * @throws {Error} If the SDK is not initialized or arguments are invalid.
-     */
-    completePurchase(options: { purchaseToken: string }): Promise<
-      | {
-          result: "success";
-        }
-      | {
-          result: "error";
-          error: "internal_error" | "invalid_token";
-        }
-    >;
-    /**
-     * Get purchases that have not yet been completed for this player.
-     *
-     * Purchases returned here should be credited to the user and `completePurchase` called.
-     */
-    getIncompletePurchases(): Promise<{
-      hasMore: boolean;
-      purchases: Array<PurchaseData>;
-      purchasesSigned: string;
-    }>;
-  };
+  captureEvent(eventName: string, properties?: Record<string, unknown>): void;
+  /** Player data — see {@link PlayerDataModule}. */
+  data: PlayerDataModule;
+  /** Notifications — see {@link NotificationsModule}. */
+  notifications: NotificationsModule;
+  /** Referrals — see {@link ReferralsModule}. */
+  referrals: ReferralsModule;
+  /** Payments — see {@link PaymentsModule}. */
+  payments: PaymentsModule;
 }
+/**
+ * The global JestSDK singleton — the entry point for all SDK usage in
+ * HTML5 games.
+ *
+ * Available as `window.JestSDK` after loading the SDK script:
+ * ```html
+ * <script src="https://cdn.jest.com/sdk/latest/jestsdk.js"></script>
+ * ```
+ *
+ * Call `JestSDK.init()` first; then use the methods documented on the
+ * {@link JestSDK} interface (e.g. `JestSDK.getPlayer()`,
+ * `JestSDK.notifications.scheduleNotification(...)`).
+ *
+ * The {@link Jest} type describes this singleton's full shape,
+ * including the `init` method.
+ */
 declare const JestSDK: Jest;

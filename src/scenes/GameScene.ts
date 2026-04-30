@@ -1,8 +1,4 @@
-import * as playerData from "../sdk/data";
-import { getEntryPayload, getPlayer, isRegistered } from "../sdk/player";
-import * as payments from "../sdk/payments";
-import { unscheduleRetentionSeries } from "../sdk/notifications";
-import { setLoadingProgress } from "../sdk/loading";
+import { unscheduleRetentionSeries } from "../retention";
 
 export class GameScene extends Phaser.Scene {
   // Game objects
@@ -49,7 +45,7 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     // Report asset loading progress to the platform loading overlay
     this.load.on("progress", (value: number) => {
-      setLoadingProgress(Math.round(value * 99));
+      JestSDK.setLoadingProgress(Math.round(value * 99));
     });
 
     for (const [name, prefix] of Object.entries(GameScene.CATS)) {
@@ -62,7 +58,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.score = 0;
-    this.bestScore = (playerData.get("highScore") as number) ?? 0;
+    this.bestScore = (JestSDK.data.get("highScore") as number) ?? 0;
     this.lives = 0;
     this.slowDown = false;
     this.catSpeed = 200;
@@ -86,7 +82,7 @@ export class GameScene extends Phaser.Scene {
     this.setupStartScreen();
 
     // Dismiss the platform loading overlay now that the scene is ready
-    setLoadingProgress(100);
+    JestSDK.setLoadingProgress(100);
   }
 
   update(): void {
@@ -97,7 +93,7 @@ export class GameScene extends Phaser.Scene {
   // ── Game Flow ───────────────────────────────────────────────
 
   private startGame(playerName: string): void {
-    playerData.set("playerName", playerName);
+    JestSDK.data.set("playerName", playerName);
 
     // Apply powerups purchased on the start screen
     if (this.slowDown) {
@@ -198,18 +194,18 @@ export class GameScene extends Phaser.Scene {
 
     // Persist high score and games played (so the next screen can decide
     // whether to prompt the player to register at a meaningful moment)
-    const prevHighScore = (playerData.get("highScore") as number) ?? 0;
+    const prevHighScore = (JestSDK.data.get("highScore") as number) ?? 0;
     const isNewHighScore = this.score > prevHighScore;
     if (isNewHighScore) {
-      playerData.set("highScore", this.score);
+      JestSDK.data.set("highScore", this.score);
     }
-    const gamesPlayed = ((playerData.get("gamesPlayed") as number) ?? 0) + 1;
-    playerData.set("gamesPlayed", gamesPlayed);
+    const gamesPlayed = ((JestSDK.data.get("gamesPlayed") as number) ?? 0) + 1;
+    JestSDK.data.set("gamesPlayed", gamesPlayed);
     // Flush before transitioning so a tab-close mid-transition doesn't lose
     // the new highScore / gamesPlayed.
-    await playerData.flush();
+    await JestSDK.data.flush();
 
-    const playerName = (playerData.get("playerName") as string) ?? "Player 1";
+    const playerName = (JestSDK.data.get("playerName") as string) ?? "Player 1";
     this.scene.start("GameOverScene", {
       score: this.score,
       playerName,
@@ -227,7 +223,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     try {
-      const products = await payments.getProducts();
+      const products = await JestSDK.payments.getProducts();
       container.innerHTML = "";
 
       for (const product of products) {
@@ -243,12 +239,50 @@ export class GameScene extends Phaser.Scene {
   }
 
   private async buyProduct(sku: string): Promise<void> {
+    // Purchase lifecycle: begin → grant locally → confirm with platform.
+    // Always grant BEFORE completing; if the game crashes between, the
+    // purchase stays "incomplete" and we recover it on next startup.
     try {
-      await payments.purchaseProduct(sku, (grantedSku) => {
-        this.grantProduct(grantedSku);
+      const result = await JestSDK.payments.beginPurchase({ productSku: sku });
+
+      if (result.result === "cancel") {
+        return;
+      }
+      if (result.result === "error") {
+        console.error("Purchase failed:", result.error);
+        return;
+      }
+
+      this.grantProduct(result.purchase.productSku);
+
+      await JestSDK.payments.completePurchase({
+        purchaseToken: result.purchase.purchaseToken,
       });
     } catch (err) {
       console.error("Purchase error:", err);
+    }
+  }
+
+  private async recoverIncompletePurchases(): Promise<void> {
+    // Replay any purchases that succeeded at checkout but were never
+    // confirmed (e.g. a crash mid-checkout). Response is paginated, so
+    // we loop until hasMore is false.
+    try {
+      let hasMore = true;
+      while (hasMore) {
+        const result = await JestSDK.payments.getIncompletePurchases();
+
+        for (const purchase of result.purchases) {
+          this.grantProduct(purchase.productSku);
+          await JestSDK.payments.completePurchase({
+            purchaseToken: purchase.purchaseToken,
+          });
+        }
+
+        hasMore = result.hasMore;
+      }
+    } catch (err) {
+      console.error("Failed to recover purchases:", err);
     }
   }
 
@@ -372,7 +406,7 @@ export class GameScene extends Phaser.Scene {
     body.setCollideWorldBounds(true);
     body.setImmovable(true);
 
-    if (getEntryPayload().difficulty === "hard") {
+    if (JestSDK.getEntryPayload().difficulty === "hard") {
       this.basket.setScale(0.5);
     }
   }
@@ -469,13 +503,13 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const player = JestSDK.getPlayer();
+    const entry = JestSDK.getEntryPayload();
+
     // Cancel stale retention notifications — the player is back
-    if (isRegistered()) {
+    if (player.registered) {
       unscheduleRetentionSeries();
     }
-
-    const entry = getEntryPayload();
-    const player = getPlayer();
 
     // Greet players who entered via a referral link
     this.applyReferrerWelcome(entry);
@@ -490,7 +524,7 @@ export class GameScene extends Phaser.Scene {
     const resolvedName =
       player.username ??
       customNameFromOnboarding ??
-      (playerData.get("playerName") as string | undefined) ??
+      (JestSDK.data.get("playerName") as string | undefined) ??
       null;
 
     // Skip the start screen if the player already has a name AND either
@@ -499,9 +533,7 @@ export class GameScene extends Phaser.Scene {
       typeof entry.notification_template === "string";
     if (resolvedName && returningFromNotification) {
       container.style.display = "none";
-      payments
-        .recoverPurchases((sku) => this.grantProduct(sku))
-        .catch((err) => console.error("Failed to recover purchases:", err));
+      this.recoverIncompletePurchases();
       this.startGame(resolvedName);
       return;
     }
@@ -540,10 +572,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Recover incomplete purchases, then list available products
-    payments
-      .recoverPurchases((sku) => this.grantProduct(sku))
-      .then(() => this.renderProducts())
-      .catch((err) => console.error("Failed to recover purchases:", err));
+    this.recoverIncompletePurchases().then(() => this.renderProducts());
 
     const handleStart = () => {
       container.style.display = "none";
