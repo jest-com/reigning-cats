@@ -251,6 +251,14 @@ export class GameScene extends Phaser.Scene {
     }
     const gamesPlayed = ((JestSDK.data.get("gamesPlayed") as number) ?? 0) + 1;
     JestSDK.data.set("gamesPlayed", gamesPlayed);
+
+    JestSDK.captureEvent("game_over", {
+      score: this.score,
+      gamesPlayed,
+      isNewHighScore,
+      premium: this.isPremium,
+    });
+
     // Flush before transitioning so a tab-close mid-transition doesn't lose
     // the new highScore / gamesPlayed.
     await JestSDK.data.flush();
@@ -308,6 +316,8 @@ export class GameScene extends Phaser.Scene {
       await JestSDK.payments.completePurchase({
         purchaseToken: result.purchase.purchaseToken,
       });
+
+      JestSDK.captureEvent("purchase", { sku: result.purchase.productSku });
     } catch (err) {
       console.error("Purchase error:", err);
     }
@@ -419,6 +429,7 @@ export class GameScene extends Phaser.Scene {
 
       // Apply the entitlement immediately, then refresh the offer list.
       this.isPremium = true;
+      JestSDK.captureEvent("subscribe", { sku });
       void this.renderSubscriptions();
     } catch (err) {
       console.error("Subscription error:", err);
@@ -732,6 +743,15 @@ export class GameScene extends Phaser.Scene {
       ) as HTMLLabelElement | null;
       if (label) {
         label.textContent = `WELCOME, ${player.username.toUpperCase()}`;
+      }
+
+      const profile = JestSDK.social.getProfile({ avatarSize: 128 });
+      const avatarEl = document.getElementById(
+        "player-avatar",
+      ) as HTMLImageElement | null;
+      if (avatarEl && profile?.avatarUrl) {
+        avatarEl.src = profile.avatarUrl;
+        avatarEl.style.display = "block";
       }
     } else {
       if (resolvedName) {

@@ -59,6 +59,16 @@
         opacity: 0.85;
       }
 
+      #player-avatar {
+        display: none;
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        border: 3px solid #1aff44;
+        object-fit: cover;
+        margin: 0 auto 14px;
+      }
+
       /* Mobile optimizations */
       @media (max-width: 768px) {
         #name-input-container {
@@ -205,6 +215,7 @@
         alt="Cat with Crown"
       />
       <div class="input-box">
+        <img id="player-avatar" alt="Your avatar" />
         <label for="player-name">ENTER YOUR NAME</label>
         <input
           type="text"

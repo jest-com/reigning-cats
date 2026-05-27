@@ -38,7 +38,7 @@ export class GameOverScene extends Phaser.Scene {
 
     // Game Over title
     this.add
-      .text(centerX, centerY - 120 * f, "GAME OVER", {
+      .text(centerX, centerY - 210 * f, "GAME OVER", {
         fontSize: `${Math.round(64 * f)}px`,
         fontFamily: "Courier New, monospace",
         color: "#ff0000",
@@ -52,7 +52,7 @@ export class GameOverScene extends Phaser.Scene {
     this.add
       .text(
         centerX,
-        centerY - 40 * f,
+        centerY - 160 * f,
         `${this.playerName}: ${this.finalScore}`,
         {
           fontSize: `${Math.round(36 * f)}px`,
@@ -73,7 +73,7 @@ export class GameOverScene extends Phaser.Scene {
       ? `NEW High Score: ${highScore}`
       : `High Score: ${highScore}`;
     this.add
-      .text(centerX, centerY + 10 * f, highScoreLabel, {
+      .text(centerX, centerY - 126 * f, highScoreLabel, {
         fontSize: `${Math.round(22 * f)}px`,
         fontFamily: "Courier New, monospace",
         color: this.isNewHighScore ? "#1AFF44" : "#ffff00",
@@ -83,8 +83,11 @@ export class GameOverScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    // Leaderboard with bot avatars
+    this.buildLeaderboard(centerX, centerY - 86 * f, f);
+
     // Play Again
-    this.createButton(centerX, centerY + 90 * f, "Play Again", () => {
+    this.createButton(centerX, centerY + 110 * f, "Play Again", () => {
       const container = document.getElementById("name-input-container");
       if (container) {
         container.style.display = "flex";
@@ -101,7 +104,7 @@ export class GameOverScene extends Phaser.Scene {
       });
 
       // Share button (referrals)
-      this.createButton(centerX, centerY + 170 * f, "Share", () => {
+      this.createButton(centerX, centerY + 172 * f, "Share", () => {
         JestSDK.referrals.shareReferralLink({
           reference: REFERRAL_REFERENCE,
           shareTitle: "Reigning Cats",
@@ -111,13 +114,123 @@ export class GameOverScene extends Phaser.Scene {
       });
 
       // Surface referral conversions the player has earned
-      this.showReferralCount(centerX, centerY + 240 * f);
+      this.showReferralCount(centerX, centerY + 212 * f);
     } else {
       // Trigger registration at a meaningful moment instead of showing
       // a button. Criteria: first game with a score that shows real
       // engagement. The platform dialog explains the benefits.
       this.maybePromptRegistration();
     }
+  }
+
+  private buildLeaderboard(centerX: number, labelY: number, f: number): void {
+    const highScore = (JestSDK.data.get("highScore") as number) ?? 0;
+    const entries = this.leaderboardEntries(highScore);
+
+    this.add
+      .text(centerX, labelY, "TOP CATS", {
+        fontSize: `${Math.round(18 * f)}px`,
+        fontFamily: "Courier New, monospace",
+        color: "#ffff00",
+        stroke: "#000000",
+        strokeThickness: 3,
+        resolution: dpr(),
+      })
+      .setOrigin(0.5);
+
+    const rowStep = 32 * f;
+    const rowW = 280 * f;
+    const avatar = 26 * f;
+    const leftX = centerX - rowW / 2;
+
+    const addAvatar = (key: string, x: number, y: number) =>
+      this.add.image(x, y, key).setDisplaySize(avatar, avatar).setOrigin(0.5);
+
+    const pending: { key: string; x: number; y: number }[] = [];
+    this.load.crossOrigin = "anonymous";
+
+    entries.forEach((e, i) => {
+      const y = labelY + 28 * f + i * rowStep;
+      const color = e.isPlayer ? "#1AFF44" : "#ffffff";
+      const rowStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+        fontSize: `${Math.round(16 * f)}px`,
+        fontFamily: "Courier New, monospace",
+        color,
+        stroke: "#000000",
+        strokeThickness: 3,
+        resolution: dpr(),
+      };
+
+      this.add
+        .text(leftX + avatar + 10 * f, y, e.username, rowStyle)
+        .setOrigin(0, 0.5);
+      this.add
+        .text(centerX + rowW / 2, y, `${e.score}`, rowStyle)
+        .setOrigin(1, 0.5);
+
+      const key = `lb_${e.username}`;
+      const x = leftX + avatar / 2;
+      if (this.textures.exists(key)) {
+        addAvatar(key, x, y);
+      } else {
+        pending.push({ key, x, y });
+        this.load.image(key, e.avatarUrl);
+      }
+    });
+
+    if (pending.length > 0) {
+      this.load.once("complete", () => {
+        if (!this.scene.isActive()) {
+          return;
+        }
+        for (const p of pending) {
+          if (this.textures.exists(p.key)) {
+            addAvatar(p.key, p.x, p.y);
+          }
+        }
+      });
+      this.load.start();
+    }
+  }
+
+  private leaderboardEntries(highScore: number): Array<{
+    username: string;
+    score: number;
+    isPlayer: boolean;
+    avatarUrl: string;
+  }> {
+    const profile = JestSDK.social.getProfile({ avatarSize: 64 });
+    // Guests have no avatar — fall back to a deterministic bot avatar.
+    const playerAvatar =
+      profile?.avatarUrl ??
+      JestSDK.social.getBotAvatar({ username: this.playerName, size: 64 });
+
+    const bots = [
+      { username: "SirPounce", score: highScore + 6 },
+      { username: "Mittens9k", score: highScore + 2 },
+      { username: "NapQueen", score: Math.max(0, highScore - 3) },
+    ];
+
+    const entries = [
+      ...bots.map((b) => ({
+        username: b.username,
+        score: b.score,
+        isPlayer: false,
+        avatarUrl: JestSDK.social.getBotAvatar({
+          username: b.username,
+          size: 64,
+        }),
+      })),
+      {
+        username: this.playerName,
+        score: highScore,
+        isPlayer: true,
+        avatarUrl: playerAvatar,
+      },
+    ];
+
+    entries.sort((a, b) => b.score - a.score);
+    return entries;
   }
 
   private maybePromptRegistration(): void {
