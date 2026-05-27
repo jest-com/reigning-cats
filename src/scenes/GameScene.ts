@@ -31,6 +31,7 @@ export class GameScene extends Phaser.Scene {
   private isMobile = false;
   private isGameOver = false;
   private musicWanted = false;
+  private isPremium = false;
 
   private static readonly CATS: Record<string, string> = {
     bella: "bella-cat",
@@ -69,6 +70,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnDelay = 2000;
     this.isGameOver = false;
     this.musicWanted = false;
+    this.isPremium = false;
     this.isMobile = isMobile();
 
     this.createAnimations();
@@ -183,8 +185,11 @@ export class GameScene extends Phaser.Scene {
 
   private catchCat(_basket: any, cat: any): void {
     cat.destroy();
-    this.score++;
-    this.scoreText.setText(`Score: ${this.score}`);
+    // Active members earn double points.
+    this.score += this.isPremium ? 2 : 1;
+    this.scoreText.setText(
+      `Score: ${this.score}${this.isPremium ? " (2×)" : ""}`,
+    );
 
     // Show that the player is beating their best in real-time
     if (this.score > this.bestScore) {
@@ -357,6 +362,105 @@ export class GameScene extends Phaser.Scene {
       parts.push("Slow Down: Active");
     }
     el.textContent = parts.join("  |  ");
+  }
+
+  // ── Subscriptions (membership on start screen) ──────────────
+
+  private async renderSubscriptions(): Promise<void> {
+    const container = document.getElementById("subscription-container");
+    const offers = document.getElementById("subscription-offers");
+    if (!container || !offers) {
+      return;
+    }
+
+    try {
+      const { subscriptions } = await JestSDK.payments.getSubscriptions();
+      // Empty for guests or when none are configured — keep it hidden.
+      if (subscriptions.length === 0) {
+        return;
+      }
+
+      this.isPremium = subscriptions.some((s) => s.status === "active");
+      offers.innerHTML = "";
+
+      for (const sub of subscriptions) {
+        const btn = document.createElement("button");
+        btn.className = "shop-btn";
+        if (sub.status === "active") {
+          btn.textContent = `${sub.displayName}: Active (Cancel)`;
+          btn.addEventListener("click", () => this.cancelMembership(sub.sku));
+        } else {
+          btn.textContent = `${sub.displayName} — ${this.formatPrice(sub)}`;
+          btn.addEventListener("click", () => this.subscribe(sub.sku));
+        }
+        offers.appendChild(btn);
+      }
+
+      container.style.display = "block";
+      this.updateSubscriptionStatus();
+    } catch (err) {
+      console.error("Failed to load subscriptions:", err);
+    }
+  }
+
+  private async subscribe(sku: string): Promise<void> {
+    try {
+      const result = await JestSDK.payments.beginSubscription({
+        subscriptionSku: sku,
+      });
+
+      if (result.result === "cancel") {
+        return;
+      }
+      if (result.result === "error") {
+        console.error("Subscription failed:", result.error);
+        return;
+      }
+
+      // Apply the entitlement immediately, then refresh the offer list.
+      this.isPremium = true;
+      void this.renderSubscriptions();
+    } catch (err) {
+      console.error("Subscription error:", err);
+    }
+  }
+
+  private async cancelMembership(sku: string): Promise<void> {
+    try {
+      const result = await JestSDK.payments.cancelSubscription({
+        subscriptionSku: sku,
+      });
+      // Re-read entitlement: a cancelled sub stays active until the
+      // billing period ends, so getSubscriptions() is the source of truth.
+      if (result.result === "success") {
+        void this.renderSubscriptions();
+      }
+    } catch (err) {
+      console.error("Cancel subscription error:", err);
+    }
+  }
+
+  private formatPrice(sub: SubscriptionData): string {
+    const period = { weekly: "wk", monthly: "mo", yearly: "yr" }[
+      sub.billingPeriod
+    ];
+    try {
+      const amount = new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: sub.currency,
+      }).format(sub.price);
+      return `${amount}/${period}`;
+    } catch {
+      return `${sub.price} ${sub.currency}/${period}`;
+    }
+  }
+
+  private updateSubscriptionStatus(): void {
+    const el = document.getElementById("subscription-status");
+    if (!el) {
+      return;
+    }
+    el.textContent = this.isPremium ? "Membership active — 2× score!" : "";
   }
 
   // ── Input ───────────────────────────────────────────────────
@@ -598,6 +702,9 @@ export class GameScene extends Phaser.Scene {
     if (resolvedName && returningFromNotification) {
       container.style.display = "none";
       this.recoverIncompletePurchases();
+      if (player.registered) {
+        void this.renderSubscriptions();
+      }
       this.startGame(resolvedName);
       return;
     }
@@ -637,6 +744,11 @@ export class GameScene extends Phaser.Scene {
 
     // Recover incomplete purchases, then list available products
     this.recoverIncompletePurchases().then(() => this.renderProducts());
+
+    // Subscriptions are registered-only; guests get an empty catalog.
+    if (player.registered) {
+      void this.renderSubscriptions();
+    }
 
     const handleStart = () => {
       container.style.display = "none";
