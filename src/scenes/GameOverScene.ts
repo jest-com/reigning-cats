@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { scheduleRetentionSeries } from "../retention";
 
 const SCORE_THRESHOLD_FOR_REG_PROMPT = 5;
@@ -78,7 +79,7 @@ export class GameOverScene extends Phaser.Scene {
     this.createButton(centerX, centerY + 90, "Play Again", () => {
       const container = document.getElementById("name-input-container");
       if (container) {
-        container.style.display = "block";
+        container.style.display = "flex";
       }
       this.scene.start("GameScene");
     });

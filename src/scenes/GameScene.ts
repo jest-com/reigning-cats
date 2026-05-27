@@ -1,7 +1,9 @@
+import Phaser from "phaser";
 import { unscheduleRetentionSeries } from "../retention";
 
 export class GameScene extends Phaser.Scene {
   // Game objects
+  private background!: Phaser.GameObjects.Graphics;
   private basket!: Phaser.GameObjects.Sprite;
   private cats!: Phaser.Physics.Arcade.Group;
   private catSpawnTimer!: Phaser.Time.TimerEvent;
@@ -77,6 +79,11 @@ export class GameScene extends Phaser.Scene {
     this.createClouds();
     this.createHUD();
     this.setupInput();
+
+    this.scale.on("resize", this.handleResize, this);
+    this.events.once("shutdown", () =>
+      this.scale.off("resize", this.handleResize, this),
+    );
 
     this.physics.pause();
     this.setupStartScreen();
@@ -354,9 +361,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createBackground(): void {
-    const background = this.add.graphics();
-    background.fillGradientStyle(0x6a8caf, 0x6a8caf, 0x4a6fa5, 0x4a6fa5);
-    background.fillRect(0, 0, this.scale.width, this.scale.height);
+    this.background = this.add.graphics();
+    this.drawBackground(this.scale.width, this.scale.height);
+  }
+
+  private drawBackground(width: number, height: number): void {
+    this.background.clear();
+    this.background.fillGradientStyle(0x6a8caf, 0x6a8caf, 0x4a6fa5, 0x4a6fa5);
+    this.background.fillRect(0, 0, width, height);
+  }
+
+  private handleResize(gameSize: Phaser.Structs.Size): void {
+    const { width, height } = gameSize;
+    this.drawBackground(width, height);
+    this.physics.world.setBounds(0, 0, width, height);
+    this.basket.setPosition(
+      Phaser.Math.Clamp(this.basket.x, 0, width),
+      height * (this.isMobile ? 0.85 : 0.9),
+    );
+    this.livesText.setX(width - 30);
   }
 
   private createSprites(): void {
@@ -400,6 +423,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createBasket(): void {
+    this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
     const y = this.scale.height * (this.isMobile ? 0.85 : 0.9);
     this.basket = this.physics.add.sprite(this.scale.width / 2, y, "basket");
     const body = this.basket.body as Phaser.Physics.Arcade.Body;

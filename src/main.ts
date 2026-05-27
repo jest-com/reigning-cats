@@ -12,7 +12,7 @@ const gameHeight = isMobile ? window.innerHeight : 1000;
 
 // Initialize the Jest SDK before starting the game
 JestSDK.init().then(() => {
-  const game = new Phaser.Game({
+  new Phaser.Game({
     type: Phaser.AUTO,
     width: gameWidth,
     height: gameHeight,
@@ -23,19 +23,11 @@ JestSDK.init().then(() => {
       arcade: { gravity: { x: 0, y: 0 }, debug: false },
     },
     scale: {
-      mode: Phaser.Scale.FIT,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
+      mode: Phaser.Scale.RESIZE,
       width: gameWidth,
       height: gameHeight,
       fullscreenTarget: "game-container",
     },
     scene: [GameScene, GameOverScene],
-  });
-
-  window.addEventListener("resize", () => {
-    game.scale.resize(
-      Math.min(window.innerWidth, gameWidth),
-      Math.min(window.innerHeight, gameHeight),
-    );
   });
 });
