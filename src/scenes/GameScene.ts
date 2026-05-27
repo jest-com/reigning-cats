@@ -210,7 +210,9 @@ export class GameScene extends Phaser.Scene {
     const threshold = this.scale.height * (this.isMobile ? 0.9 : 0.95);
 
     // Snapshot the list: cat.destroy() mutates the group's array.
-    for (const cat of [...this.cats.getChildren()] as Phaser.Physics.Arcade.Sprite[]) {
+    for (const cat of [
+      ...this.cats.getChildren(),
+    ] as Phaser.Physics.Arcade.Sprite[]) {
       if (cat.y + cat.displayHeight / 2 < threshold) {
         continue;
       }

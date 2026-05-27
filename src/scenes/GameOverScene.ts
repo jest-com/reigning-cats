@@ -50,16 +50,21 @@ export class GameOverScene extends Phaser.Scene {
 
     // Player score
     this.add
-      .text(centerX, centerY - 40 * f, `${this.playerName}: ${this.finalScore}`, {
-        fontSize: `${Math.round(36 * f)}px`,
-        fontFamily: "Courier New, monospace",
-        color: "#ffffff",
-        stroke: "#000000",
-        strokeThickness: 4,
-        fontStyle: "bold",
-        align: "center",
-        resolution: dpr(),
-      })
+      .text(
+        centerX,
+        centerY - 40 * f,
+        `${this.playerName}: ${this.finalScore}`,
+        {
+          fontSize: `${Math.round(36 * f)}px`,
+          fontFamily: "Courier New, monospace",
+          color: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 4,
+          fontStyle: "bold",
+          align: "center",
+          resolution: dpr(),
+        },
+      )
       .setOrigin(0.5);
 
     // Persisted high score (with a "NEW!" badge if applicable)
