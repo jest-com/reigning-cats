@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { dpr, isMobile } from "../platform";
 import { unscheduleRetentionSeries } from "../retention";
 
 export class GameScene extends Phaser.Scene {
@@ -28,6 +29,8 @@ export class GameScene extends Phaser.Scene {
   private catSpeed = 200;
   private spawnDelay = 2000;
   private isMobile = false;
+  private isGameOver = false;
+  private musicWanted = false;
 
   private static readonly CATS: Record<string, string> = {
     bella: "bella-cat",
@@ -55,7 +58,6 @@ export class GameScene extends Phaser.Scene {
         this.load.image(`${name}-cat${i}`, `cat-images/${prefix}${i}.png`);
       }
     }
-    this.load.audio("bgMusic", "retro-game-402454.mp3");
   }
 
   create(): void {
@@ -65,10 +67,9 @@ export class GameScene extends Phaser.Scene {
     this.slowDown = false;
     this.catSpeed = 200;
     this.spawnDelay = 2000;
-    this.isMobile =
-      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
-      );
+    this.isGameOver = false;
+    this.musicWanted = false;
+    this.isMobile = isMobile();
 
     this.createAnimations();
     this.createBackground();
@@ -90,6 +91,12 @@ export class GameScene extends Phaser.Scene {
 
     // Dismiss the platform loading overlay now that the scene is ready
     JestSDK.setLoadingProgress(100);
+
+    // Fetch the background music in the background so it never blocks the
+    // start screen. Detach the progress handler first so it doesn't reopen
+    // the loading overlay.
+    this.load.off("progress");
+    this.loadBackgroundMusic();
   }
 
   update(): void {
@@ -107,6 +114,7 @@ export class GameScene extends Phaser.Scene {
       this.catSpeed *= 0.5;
     }
 
+    this.basket.setVisible(true);
     this.scoreText.setVisible(true);
     this.bestText.setVisible(true);
     this.livesText.setText(`Lives: ${this.lives}`);
@@ -122,18 +130,39 @@ export class GameScene extends Phaser.Scene {
     });
     this.spawnCat();
 
-    // Start music
+    // Music may still be loading; play it now or as soon as it arrives.
+    this.musicWanted = true;
+    this.ensureMusicPlaying();
+  }
+
+  private loadBackgroundMusic(): void {
+    if (this.cache.audio.exists("bgMusic")) {
+      return;
+    }
+    this.load.audio("bgMusic", "retro-game-402454.mp3");
+    this.load.once("complete", () => this.ensureMusicPlaying());
+    this.load.start();
+  }
+
+  private ensureMusicPlaying(): void {
+    if (!this.musicWanted || !this.cache.audio.exists("bgMusic")) {
+      return;
+    }
     if (!this.backgroundMusic) {
       this.backgroundMusic = this.sound.add("bgMusic", {
         loop: true,
         volume: 0.5,
       });
     }
-    this.backgroundMusic.play();
+    if (!this.backgroundMusic.isPlaying) {
+      this.backgroundMusic.play();
+    }
   }
 
   private spawnCat(): void {
-    const scale = this.isMobile ? 0.15 : 0.25;
+    // Scale cats 0.15 → 0.25 across canvas widths 375px → 800px.
+    const t = Phaser.Math.Clamp((this.scale.width - 375) / 425, 0, 1);
+    const scale = Phaser.Math.Linear(0.15, 0.25, t);
     const margin = (512 * scale) / 2;
     const x = Phaser.Math.Between(margin, this.scale.width - margin);
 
@@ -180,20 +209,27 @@ export class GameScene extends Phaser.Scene {
   private checkMissedCats(): void {
     const threshold = this.scale.height * (this.isMobile ? 0.9 : 0.95);
 
-    this.cats.getChildren().forEach((cat: any) => {
-      if (cat.y + cat.displayHeight / 2 >= threshold) {
-        if (this.lives > 0) {
-          this.lives--;
-          this.livesText.setText(`Lives: ${this.lives}`);
-          cat.destroy();
-        } else {
-          void this.gameOver();
-        }
+    // Snapshot the list: cat.destroy() mutates the group's array.
+    for (const cat of [...this.cats.getChildren()] as Phaser.Physics.Arcade.Sprite[]) {
+      if (cat.y + cat.displayHeight / 2 < threshold) {
+        continue;
       }
-    });
+      if (this.lives > 0) {
+        this.lives--;
+        this.livesText.setText(`Lives: ${this.lives}`);
+        cat.destroy();
+      } else {
+        void this.gameOver();
+        return;
+      }
+    }
   }
 
   private async gameOver(): Promise<void> {
+    if (this.isGameOver) {
+      return;
+    }
+    this.isGameOver = true;
     this.catSpawnTimer.destroy();
     if (this.backgroundMusic?.isPlaying) {
       this.backgroundMusic.stop();
@@ -426,6 +462,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
     const y = this.scale.height * (this.isMobile ? 0.85 : 0.9);
     this.basket = this.physics.add.sprite(this.scale.width / 2, y, "basket");
+    this.basket.setVisible(false);
     const body = this.basket.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
     body.setImmovable(true);
@@ -488,6 +525,7 @@ export class GameScene extends Phaser.Scene {
       stroke: "#000000",
       strokeThickness: 4,
       fontStyle: "bold",
+      resolution: dpr(),
     };
 
     this.scoreText = this.add.text(30, 30, "Score: 0", style);
@@ -631,6 +669,7 @@ export class GameScene extends Phaser.Scene {
           stroke: "#000000",
           strokeThickness: 5,
           fontStyle: "bold",
+          resolution: dpr(),
         },
       )
       .setOrigin(0.5)

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { dpr } from "../platform";
 import { scheduleRetentionSeries } from "../retention";
 
 const SCORE_THRESHOLD_FOR_REG_PROMPT = 5;
@@ -10,7 +11,7 @@ export class GameOverScene extends Phaser.Scene {
   private playerName = "Player 1";
   private gamesPlayed = 1;
   private isNewHighScore = false;
-  private isMobile = false;
+  private uiScale = 1;
 
   constructor() {
     super({ key: "GameOverScene" });
@@ -26,37 +27,38 @@ export class GameOverScene extends Phaser.Scene {
     this.playerName = data.playerName ?? "Player 1";
     this.gamesPlayed = data.gamesPlayed ?? 1;
     this.isNewHighScore = data.isNewHighScore ?? false;
-    this.isMobile =
-      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
-      );
   }
 
   create(): void {
     const centerX = this.cameras.main.width / 2;
     const centerY = this.cameras.main.height / 2;
+    // Scale all UI down on narrow screens (full size at >= 800px wide).
+    const f = Phaser.Math.Clamp(this.cameras.main.width / 800, 0.6, 1);
+    this.uiScale = f;
 
     // Game Over title
     this.add
-      .text(centerX, centerY - 120, "GAME OVER", {
-        fontSize: this.isMobile ? "48px" : "64px",
+      .text(centerX, centerY - 120 * f, "GAME OVER", {
+        fontSize: `${Math.round(64 * f)}px`,
         fontFamily: "Courier New, monospace",
         color: "#ff0000",
         stroke: "#000000",
         strokeThickness: 6,
+        resolution: dpr(),
       })
       .setOrigin(0.5);
 
     // Player score
     this.add
-      .text(centerX, centerY - 40, `${this.playerName}: ${this.finalScore}`, {
-        fontSize: this.isMobile ? "24px" : "36px",
+      .text(centerX, centerY - 40 * f, `${this.playerName}: ${this.finalScore}`, {
+        fontSize: `${Math.round(36 * f)}px`,
         fontFamily: "Courier New, monospace",
         color: "#ffffff",
         stroke: "#000000",
         strokeThickness: 4,
         fontStyle: "bold",
         align: "center",
+        resolution: dpr(),
       })
       .setOrigin(0.5);
 
@@ -66,17 +68,18 @@ export class GameOverScene extends Phaser.Scene {
       ? `NEW High Score: ${highScore}`
       : `High Score: ${highScore}`;
     this.add
-      .text(centerX, centerY + 10, highScoreLabel, {
-        fontSize: "22px",
+      .text(centerX, centerY + 10 * f, highScoreLabel, {
+        fontSize: `${Math.round(22 * f)}px`,
         fontFamily: "Courier New, monospace",
         color: this.isNewHighScore ? "#1AFF44" : "#ffff00",
         stroke: "#000000",
         strokeThickness: 3,
+        resolution: dpr(),
       })
       .setOrigin(0.5);
 
     // Play Again
-    this.createButton(centerX, centerY + 90, "Play Again", () => {
+    this.createButton(centerX, centerY + 90 * f, "Play Again", () => {
       const container = document.getElementById("name-input-container");
       if (container) {
         container.style.display = "flex";
@@ -93,7 +96,7 @@ export class GameOverScene extends Phaser.Scene {
       });
 
       // Share button (referrals)
-      this.createButton(centerX, centerY + 170, "Share", () => {
+      this.createButton(centerX, centerY + 170 * f, "Share", () => {
         JestSDK.referrals.shareReferralLink({
           reference: REFERRAL_REFERENCE,
           shareTitle: "Reigning Cats",
@@ -103,7 +106,7 @@ export class GameOverScene extends Phaser.Scene {
       });
 
       // Surface referral conversions the player has earned
-      this.showReferralCount(centerX, centerY + 240);
+      this.showReferralCount(centerX, centerY + 240 * f);
     } else {
       // Trigger registration at a meaningful moment instead of showing
       // a button. Criteria: first game with a score that shows real
@@ -153,11 +156,12 @@ export class GameOverScene extends Phaser.Scene {
       }
       this.add
         .text(x, y, `Friends invited: ${count}`, {
-          fontSize: "18px",
+          fontSize: `${Math.round(18 * this.uiScale)}px`,
           fontFamily: "Courier New, monospace",
           color: "#1AFF44",
           stroke: "#000000",
           strokeThickness: 3,
+          resolution: dpr(),
         })
         .setOrigin(0.5);
     } catch (err) {
@@ -171,16 +175,18 @@ export class GameOverScene extends Phaser.Scene {
     label: string,
     onClick: () => void,
   ): void {
-    const bg = this.add.rectangle(x, y, 200, 60, 0x1aff44);
+    const f = this.uiScale;
+    const bg = this.add.rectangle(x, y, 200 * f, 60 * f, 0x1aff44);
     bg.setStrokeStyle(4, 0xffffff);
     bg.setInteractive({ useHandCursor: true });
 
     this.add
       .text(x, y, label, {
-        fontSize: "28px",
+        fontSize: `${Math.round(28 * f)}px`,
         fontFamily: "Courier New, monospace",
         color: "#ffffff",
         fontStyle: "bold",
+        resolution: dpr(),
       })
       .setOrigin(0.5);
 

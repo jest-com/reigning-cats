@@ -52,6 +52,13 @@
         filter: drop-shadow(0 0 20px rgba(255, 255, 0, 0.5));
       }
 
+      #jest-logo {
+        width: 104px;
+        height: auto;
+        margin-top: 24px;
+        opacity: 0.85;
+      }
+
       /* Mobile optimizations */
       @media (max-width: 768px) {
         #name-input-container {
@@ -241,6 +248,7 @@
         </div>
         <button id="start-game-btn">START GAME</button>
       </div>
+      <img id="jest-logo" src="jest-logo-dark.svg" alt="Jest" />
     </div>
     <div id="game-container"></div>
     <script type="module" src="./src/main.ts"></script>

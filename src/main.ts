@@ -1,18 +1,13 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
-import { GameOverScene } from "./scenes/GameOverScene";
+import { isMobile } from "./platform";
 
-const isMobile =
-  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent,
-  );
-
-const gameWidth = isMobile ? Math.min(window.innerWidth, 600) : 800;
-const gameHeight = isMobile ? window.innerHeight : 1000;
+const gameWidth = isMobile() ? Math.min(window.innerWidth, 600) : 800;
+const gameHeight = isMobile() ? window.innerHeight : 1000;
 
 // Initialize the Jest SDK before starting the game
 JestSDK.init().then(() => {
-  new Phaser.Game({
+  const game = new Phaser.Game({
     type: Phaser.AUTO,
     width: gameWidth,
     height: gameHeight,
@@ -28,6 +23,11 @@ JestSDK.init().then(() => {
       height: gameHeight,
       fullscreenTarget: "game-container",
     },
-    scene: [GameScene, GameOverScene],
+    scene: [GameScene],
+  });
+
+  // Lazy-load the game-over scene into its own chunk.
+  void import("./scenes/GameOverScene").then(({ GameOverScene }) => {
+    game.scene.add("GameOverScene", GameOverScene);
   });
 });
