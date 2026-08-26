@@ -14,6 +14,7 @@
     "phaser": "^4.1.0"
   },
   "devDependencies": {
+    "@jest-com/types": "^1.260826.3",
     "oxfmt": "^0.52.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.14"

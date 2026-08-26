@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { dpr, isMobile } from "../platform";
 import { unscheduleRetentionSeries } from "../retention";
+import type { SubscriptionData } from "@jest-com/types";
 
 export class GameScene extends Phaser.Scene {
   // Game objects
