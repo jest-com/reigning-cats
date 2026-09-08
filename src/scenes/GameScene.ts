@@ -33,6 +33,7 @@ export class GameScene extends Phaser.Scene {
   private isGameOver = false;
   private musicWanted = false;
   private isPremium = false;
+  private sandboxPurchase = false;
 
   private static readonly CATS: Record<string, string> = {
     bella: "bella-cat",
@@ -72,6 +73,7 @@ export class GameScene extends Phaser.Scene {
     this.isGameOver = false;
     this.musicWanted = false;
     this.isPremium = false;
+    this.sandboxPurchase = false;
     this.isMobile = isMobile();
 
     this.createAnimations();
@@ -85,15 +87,29 @@ export class GameScene extends Phaser.Scene {
     this.setupInput();
 
     this.scale.on("resize", this.handleResize, this);
-    this.events.once("shutdown", () =>
-      this.scale.off("resize", this.handleResize, this),
-    );
+
+    // The exit confirmation is only opening, and the player may well stay, so
+    // this saves and deliberately tears nothing down. It can fire repeatedly
+    // in one session, so it has to stay idempotent. Lives in the scene, not
+    // main.ts, because it needs the live score.
+    const offExitRequested = JestSDK.lifecycle.onExitRequested(async () => {
+      if (this.score > ((JestSDK.data.get("highScore") as number) ?? 0)) {
+        JestSDK.data.set("highScore", this.score);
+        await JestSDK.data.flush();
+      }
+    });
+
+    this.events.once("shutdown", () => {
+      this.scale.off("resize", this.handleResize, this);
+      offExitRequested();
+    });
 
     this.physics.pause();
     this.setupStartScreen();
 
-    // Dismiss the platform loading overlay now that the scene is ready
-    JestSDK.setLoadingProgress(100);
+    // The player can interact now, so report readiness. In Manual mode this
+    // also dismisses the loading overlay, so it replaces reporting 100.
+    JestSDK.markGameLoaded();
 
     // Fetch the background music in the background so it never blocks the
     // start screen. Detach the progress handler first so it doesn't reopen
@@ -133,7 +149,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.spawnCat();
 
-    // Music may still be loading; play it now or as soon as it arrives.
+    // Music may still be loading, so play it now or as soon as it arrives.
     this.musicWanted = true;
     this.ensureMusicPlaying();
   }
@@ -244,14 +260,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Persist high score and games played (so the next screen can decide
-    // whether to prompt the player to register at a meaningful moment)
-    const prevHighScore = (JestSDK.data.get("highScore") as number) ?? 0;
+    // whether to prompt the player to register at a meaningful moment).
+    // One getAll() snapshot instead of a get() per key, then one batched
+    // set() so both land in a single update to the platform.
+    const stored = JestSDK.data.getAll();
+    const prevHighScore = (stored.highScore as number) ?? 0;
     const isNewHighScore = this.score > prevHighScore;
-    if (isNewHighScore) {
-      JestSDK.data.set("highScore", this.score);
-    }
-    const gamesPlayed = ((JestSDK.data.get("gamesPlayed") as number) ?? 0) + 1;
-    JestSDK.data.set("gamesPlayed", gamesPlayed);
+    const gamesPlayed = ((stored.gamesPlayed as number) ?? 0) + 1;
+
+    JestSDK.data.set({
+      gamesPlayed,
+      highScore: isNewHighScore ? this.score : prevHighScore,
+    });
 
     JestSDK.captureEvent("game_over", {
       score: this.score,
@@ -260,11 +280,15 @@ export class GameScene extends Phaser.Scene {
       premium: this.isPremium,
     });
 
+    // Finishing a round is the earliest point the player has experienced the
+    // core loop. Repeat calls are ignored, so this needs no "first run" flag.
+    JestSDK.markFirstMilestone();
+
     // Flush before transitioning so a tab-close mid-transition doesn't lose
     // the new highScore / gamesPlayed.
     await JestSDK.data.flush();
 
-    const playerName = (JestSDK.data.get("playerName") as string) ?? "Player 1";
+    const playerName = (stored.playerName as string) ?? "Player 1";
     this.scene.start("GameOverScene", {
       score: this.score,
       playerName,
@@ -299,7 +323,7 @@ export class GameScene extends Phaser.Scene {
 
   private async buyProduct(sku: string): Promise<void> {
     // Purchase lifecycle: begin → grant locally → confirm with platform.
-    // Always grant BEFORE completing; if the game crashes between, the
+    // Always grant BEFORE completing. If the game crashes between, the
     // purchase stays "incomplete" and we recover it on next startup.
     try {
       const result = await JestSDK.payments.beginPurchase({ productSku: sku });
@@ -312,13 +336,16 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
-      this.grantProduct(result.purchase.productSku);
+      this.grantProduct(result.purchase.productSku, result.purchase.sandbox);
 
       await JestSDK.payments.completePurchase({
         purchaseToken: result.purchase.purchaseToken,
       });
 
-      JestSDK.captureEvent("purchase", { sku: result.purchase.productSku });
+      JestSDK.captureEvent("purchase", {
+        sku: result.purchase.productSku,
+        sandbox: result.purchase.sandbox === true,
+      });
     } catch (err) {
       console.error("Purchase error:", err);
     }
@@ -334,7 +361,7 @@ export class GameScene extends Phaser.Scene {
         const result = await JestSDK.payments.getIncompletePurchases();
 
         for (const purchase of result.purchases) {
-          this.grantProduct(purchase.productSku);
+          this.grantProduct(purchase.productSku, purchase.sandbox);
           await JestSDK.payments.completePurchase({
             purchaseToken: purchase.purchaseToken,
           });
@@ -347,7 +374,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private grantProduct(sku: string): void {
+  private grantProduct(sku: string, sandbox?: boolean): void {
     switch (sku) {
       case "extra_life":
         this.lives++;
@@ -356,6 +383,10 @@ export class GameScene extends Phaser.Scene {
         this.slowDown = true;
         break;
     }
+    // Sandbox purchases record zero credits, so the item is granted either way
+    // and only labelled. A backend would check this flag on the signed
+    // purchase before booking revenue.
+    this.sandboxPurchase = this.sandboxPurchase || sandbox === true;
     this.updateShopStatus();
   }
 
@@ -372,6 +403,9 @@ export class GameScene extends Phaser.Scene {
     if (this.slowDown) {
       parts.push("Slow Down: Active");
     }
+    if (this.sandboxPurchase) {
+      parts.push("TEST PURCHASE");
+    }
     el.textContent = parts.join("  |  ");
   }
 
@@ -386,7 +420,7 @@ export class GameScene extends Phaser.Scene {
 
     try {
       const { subscriptions } = await JestSDK.payments.getSubscriptions();
-      // Empty for guests or when none are configured — keep it hidden.
+      // Empty for guests or when none are configured, so keep it hidden.
       if (subscriptions.length === 0) {
         return;
       }
@@ -397,11 +431,12 @@ export class GameScene extends Phaser.Scene {
       for (const sub of subscriptions) {
         const btn = document.createElement("button");
         btn.className = "shop-btn";
+        const test = sub.sandbox === true ? " [TEST]" : "";
         if (sub.status === "active") {
-          btn.textContent = `${sub.displayName}: Active (Cancel)`;
-          btn.addEventListener("click", () => this.cancelMembership(sub.sku));
+          btn.textContent = `${sub.displayName}: Active${test} (Cancel)`;
+          btn.addEventListener("click", () => this.cancelMembership(sub));
         } else {
-          btn.textContent = `${sub.displayName} — ${this.formatPrice(sub)}`;
+          btn.textContent = `${sub.displayName}: ${this.formatOffer(sub)}${test}`;
           btn.addEventListener("click", () => this.subscribe(sub.sku));
         }
         offers.appendChild(btn);
@@ -437,19 +472,103 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private async cancelMembership(sku: string): Promise<void> {
+  private async cancelMembership(sub: SubscriptionData): Promise<void> {
+    // Win-back before cancelling. retentionOffer is only present while the
+    // player is eligible, so its absence means go straight to the cancel.
+    if (sub.retentionOffer) {
+      this.renderRetentionOffer(sub);
+      return;
+    }
+    await this.confirmCancel(sub.sku);
+  }
+
+  private renderRetentionOffer(sub: SubscriptionData): void {
+    const offers = document.getElementById("subscription-offers");
+    if (!offers || !sub.retentionOffer) {
+      return;
+    }
+    offers.innerHTML = "";
+
+    const discounted = this.formatPrice({
+      ...sub,
+      price: sub.retentionOffer.price,
+    });
+    const duration = this.formatPeriodCount(
+      sub,
+      sub.retentionOffer.durationPeriods,
+    );
+
+    // Inline buttons rather than window.confirm: a modal dialog blocks the
+    // SDK message bridge for as long as it is open.
+    const stay = document.createElement("button");
+    stay.className = "shop-btn";
+    stay.textContent = `Stay for ${discounted} (${duration})`;
+    stay.addEventListener("click", () => this.claimRetentionOffer(sub.sku));
+    offers.appendChild(stay);
+
+    const cancel = document.createElement("button");
+    cancel.className = "shop-btn";
+    cancel.textContent = "Cancel anyway";
+    cancel.addEventListener("click", () => this.confirmCancel(sub.sku));
+    offers.appendChild(cancel);
+  }
+
+  private async claimRetentionOffer(sku: string): Promise<void> {
     try {
-      const result = await JestSDK.payments.cancelSubscription({
+      const result = await JestSDK.payments.claimRetentionOffer({
         subscriptionSku: sku,
       });
-      // Re-read entitlement: a cancelled sub stays active until the
-      // billing period ends, so getSubscriptions() is the source of truth.
-      if (result.result === "success") {
-        void this.renderSubscriptions();
+      if (result.result === "error") {
+        console.error("Retention offer failed:", result.error);
       }
+    } catch (err) {
+      console.error("Retention offer error:", err);
+    }
+    // The discount applies instantly with no checkout, so re-reading is all
+    // that is needed. Runs on failure too, to restore the offer list.
+    void this.renderSubscriptions();
+  }
+
+  private async confirmCancel(sku: string): Promise<void> {
+    try {
+      await JestSDK.payments.cancelSubscription({ subscriptionSku: sku });
     } catch (err) {
       console.error("Cancel subscription error:", err);
     }
+    // Re-read entitlement: a cancelled sub stays active until the billing
+    // period ends, so getSubscriptions() is the source of truth.
+    void this.renderSubscriptions();
+  }
+
+  /**
+   * Spells out every billing phase the player will actually go through. A plan
+   * can carry a free trial and an introductory price at the same time, so
+   * these are collected in order rather than treated as either/or.
+   */
+  private formatOffer(sub: SubscriptionData): string {
+    const phases: string[] = [];
+
+    if (sub.trialEligible) {
+      phases.push("Free trial");
+    }
+    if (sub.introOffer) {
+      const intro = this.formatPrice({ ...sub, price: sub.introOffer.price });
+      const duration = this.formatPeriodCount(
+        sub,
+        sub.introOffer.durationPeriods,
+      );
+      phases.push(`${intro} for ${duration}`);
+    }
+    phases.push(this.formatPrice(sub));
+
+    return phases.join(", then ");
+  }
+
+  private formatPeriodCount(sub: SubscriptionData, count: number): string {
+    const unit = { weekly: "week", monthly: "month", yearly: "year" }[
+      sub.billingPeriod
+    ];
+    return `${count} ${unit}${count === 1 ? "" : "s"}`;
   }
 
   private formatPrice(sub: SubscriptionData): string {
@@ -472,7 +591,7 @@ export class GameScene extends Phaser.Scene {
     if (!el) {
       return;
     }
-    el.textContent = this.isPremium ? "Membership active — 2× score!" : "";
+    el.textContent = this.isPremium ? "Membership active. 2× score!" : "";
   }
 
   // ── Input ───────────────────────────────────────────────────
@@ -686,13 +805,17 @@ export class GameScene extends Phaser.Scene {
     const player = JestSDK.getPlayer();
     const entry = JestSDK.getEntryPayload();
 
-    // Cancel stale retention notifications — the player is back
+    // Cancel stale retention notifications, the player is back
     if (player.registered) {
       unscheduleRetentionSeries();
+      // The guest prompt cooldown is dead state once the player registers.
+      JestSDK.data.delete("lastRegPromptGame");
     }
 
     // Greet players who entered via a referral link
     this.applyReferrerWelcome(entry);
+
+    const stored = JestSDK.data.getAll();
 
     // Prefer the platform username for registered players, then any
     // customName collected by a Jest onboarding flow, then a previously
@@ -704,7 +827,7 @@ export class GameScene extends Phaser.Scene {
     const resolvedName =
       player.username ??
       customNameFromOnboarding ??
-      (JestSDK.data.get("playerName") as string | undefined) ??
+      (stored.playerName as string | undefined) ??
       null;
 
     // Skip the start screen if the player already has a name AND either
@@ -736,7 +859,7 @@ export class GameScene extends Phaser.Scene {
     startBtn.parentNode!.replaceChild(freshBtn, startBtn);
 
     if (player.username) {
-      // Registered player — hide the name input entirely
+      // Registered player, so hide the name input entirely
       freshInput.value = player.username;
       freshInput.style.display = "none";
       const label = document.querySelector(
@@ -766,7 +889,7 @@ export class GameScene extends Phaser.Scene {
     // Recover incomplete purchases, then list available products
     this.recoverIncompletePurchases().then(() => this.renderProducts());
 
-    // Subscriptions are registered-only; guests get an empty catalog.
+    // Subscriptions are registered-only, so guests get an empty catalog.
     if (player.registered) {
       void this.renderSubscriptions();
     }

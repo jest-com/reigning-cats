@@ -13,8 +13,8 @@ importers:
         version: 4.1.0
     devDependencies:
       '@jest-com/types':
-        specifier: ^1.260826.3
-        version: 1.260826.3
+        specifier: ^1.260904.11
+        version: 1.260904.11
       oxfmt:
         specifier: ^0.52.0
         version: 0.52.0
@@ -192,8 +192,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@jest-com/types@1.260826.3':
-    resolution: {integrity: sha512-/k7BeXNE52XPWxCR2NdjUFsriBwWzinL283L0VQ3YYyBGWLdTp8JIQeHLC0MgfFPjvcvffA8RSJ8P54qXP3LTA==}
+  '@jest-com/types@1.260904.11':
+    resolution: {integrity: sha512-kNK+SOjYA+Vp6+POslVVJwPLU8qh5jJAABtQlwz4ZKJbgAU1y9uo3/39jdYQ6iDXHG2fs1J3sGKR05dNLXZVXQ==}
 
   '@napi-rs/wasm-runtime@1.1.4':
     resolution: {integrity: sha512-3NQNNgA1YSlJb/kMH1ildASP9HW7/7kYnRI2szWJaofaS1hWmbGI4H+d3+22aGzXXN9IJ+n+GiFVcGipJP18ow==}
@@ -723,7 +723,7 @@ snapshots:
   '@esbuild/win32-x64@0.27.7':
     optional: true
 
-  '@jest-com/types@1.260826.3': {}
+  '@jest-com/types@1.260904.11': {}
 
   '@napi-rs/wasm-runtime@1.1.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:

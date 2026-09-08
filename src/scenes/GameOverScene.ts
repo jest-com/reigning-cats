@@ -1,8 +1,8 @@
 import Phaser from "phaser";
 import { dpr } from "../platform";
 import { scheduleRetentionSeries } from "../retention";
+import { captureCanvas } from "../snapshot";
 
-const SCORE_THRESHOLD_FOR_REG_PROMPT = 5;
 const REG_PROMPT_COOLDOWN_GAMES = 5;
 const REFERRAL_REFERENCE = "share_score";
 
@@ -96,7 +96,7 @@ export class GameOverScene extends Phaser.Scene {
     });
 
     if (JestSDK.getPlayer().registered) {
-      // Schedule a personalized D1/D3/D7 retention series tied to the
+      // Schedule a personalized D1 to D7 retention series tied to the
       // player's current high score
       scheduleRetentionSeries({
         score: highScore,
@@ -105,20 +105,14 @@ export class GameOverScene extends Phaser.Scene {
 
       // Share button (referrals)
       this.createButton(centerX, centerY + 172 * f, "Share", () => {
-        JestSDK.referrals.shareReferralLink({
-          reference: REFERRAL_REFERENCE,
-          shareTitle: "Reigning Cats",
-          shareText: `I scored ${this.finalScore} in Reigning Cats! Can you beat me?`,
-          entryPayload: { referrer_name: this.playerName },
-        });
+        void this.shareScore();
       });
 
       // Surface referral conversions the player has earned
       this.showReferralCount(centerX, centerY + 212 * f);
     } else {
-      // Trigger registration at a meaningful moment instead of showing
-      // a button. Criteria: first game with a score that shows real
-      // engagement. The platform dialog explains the benefits.
+      // Ask a guest to register at a meaningful moment rather than parking
+      // a button on screen. The gate below explains what registering buys.
       this.maybePromptRegistration();
     }
   }
@@ -200,7 +194,7 @@ export class GameOverScene extends Phaser.Scene {
     avatarUrl: string;
   }> {
     const profile = JestSDK.social.getProfile({ avatarSize: 64 });
-    // Guests have no avatar — fall back to a deterministic bot avatar.
+    // Guests have no avatar, so fall back to a deterministic bot avatar.
     const playerAvatar =
       profile?.avatarUrl ??
       JestSDK.social.getBotAvatar({ username: this.playerName, size: 64 });
@@ -234,15 +228,10 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   private maybePromptRegistration(): void {
-    const hasMeaningfulScore =
-      this.finalScore >= SCORE_THRESHOLD_FOR_REG_PROMPT;
-    if (!hasMeaningfulScore) {
-      return;
-    }
-
-    // Prompt on the first meaningful game, then re-prompt every
-    // REG_PROMPT_COOLDOWN_GAMES meaningful games if the player declined.
-    // The platform's own autoLoginReminders handles longer-term nudging.
+    // Ask once the player has finished a round: that is the same "they got the
+    // point" signal markFirstMilestone() reports, and a score they might not
+    // want to lose. Re-prompt every REG_PROMPT_COOLDOWN_GAMES rounds if they
+    // declined, and let the platform's autoLoginReminders nudge in between.
     const lastPromptGame =
       (JestSDK.data.get("lastRegPromptGame") as number) ?? 0;
     const isFirstPrompt = lastPromptGame === 0;
@@ -253,20 +242,103 @@ export class GameOverScene extends Phaser.Scene {
     }
 
     JestSDK.data.set("lastRegPromptGame", this.gamesPlayed);
-    // Pass context through the entry payload so the game can react
-    // appropriately when the player returns after registering.
-    JestSDK.login({
-      entryPayload: {
-        reason: "save_first_score",
-        score: this.finalScore,
-      },
-    });
+    this.showRegistrationScreen();
+  }
+
+  /**
+   * A full-screen gate over the game-over scene, not a card tucked beside
+   * other UI: registration is the only thing being asked here. The game draws
+   * the screen and drives the flow through the two actions
+   * showRegistrationOverlay hands back, so the ask matches the game's art.
+   *
+   * The platform renders its own legal text and close button on top. The game
+   * must not hide, recreate, or obstruct either, or block the player skipping.
+   */
+  private showRegistrationScreen(): void {
+    const screen = document.getElementById("register-screen");
+    const registerBtn = document.getElementById("register-btn");
+    const laterBtn = document.getElementById("register-later-btn");
+    if (!screen || !registerBtn || !laterBtn) {
+      return;
+    }
+
+    const hide = () => {
+      screen.style.display = "none";
+    };
+
+    const { loginButtonAction, closeButtonAction } =
+      JestSDK.showRegistrationOverlay({
+        theme: "dark",
+        // Must contain {{registrationCode}} exactly once and stay inside the
+        // 140-character SMS budget once the code is substituted in.
+        message: "Let me into Reigning Cats! {{registrationCode}} is my code.",
+        // Delivered back via getEntryPayload() when the player returns, so the
+        // game knows which ask converted them.
+        entryPayload: { reason: "save_first_score", score: this.finalScore },
+        // Fires on either dismissal route, but only once the platform
+        // confirms it. Covers the close button the platform draws itself.
+        onClose: hide,
+      });
+
+    // Assigned rather than added: replaying reaches this screen again, and
+    // addEventListener would stack a handler per round.
+    registerBtn.onclick = loginButtonAction;
+    laterBtn.onclick = () => {
+      // Dismiss the game's own screen without waiting for a round trip. The
+      // platform overlay keeps its own close button either way.
+      hide();
+      closeButtonAction();
+    };
+    screen.style.display = "flex";
+  }
+
+  private async shareScore(): Promise<void> {
+    // A snapshot of this screen becomes the referral link's OG image, so the
+    // preview in the messaging app shows the real score instead of static art.
+    // JPEG keeps it well inside the 2 MB data-URL limit.
+    const shareImage = await captureCanvas(this.game, "image/jpeg");
+
+    try {
+      await JestSDK.referrals.shareReferralLink({
+        reference: REFERRAL_REFERENCE,
+        shareTitle: "Reigning Cats",
+        shareText: `I scored ${this.finalScore} in Reigning Cats! Can you beat me?`,
+        entryPayload: { referrer_name: this.playerName },
+        shareImage: shareImage ?? undefined,
+        // Tell the referrer when invites convert. The platform picks the
+        // template with the highest threshold the player has passed.
+        notificationTemplates: [
+          {
+            minConversionCount: 1,
+            variants: [
+              {
+                title: "Your invite landed",
+                body: `${this.playerName}, a friend just joined Reigning Cats through your link.`,
+                ctaText: "See Scores",
+              },
+            ],
+          },
+          {
+            minConversionCount: 3,
+            variants: [
+              {
+                title: "Three friends in",
+                body: `${this.playerName}, three friends are chasing your ${this.finalScore} in Reigning Cats.`,
+                ctaText: "Defend It",
+              },
+            ],
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("Failed to share referral link:", err);
+    }
   }
 
   private async showReferralCount(x: number, y: number): Promise<void> {
     try {
       // referralsSigned is also returned for server-side verification
-      // — recommended before granting any reward in production.
+      // Recommended before granting any reward in production.
       const { referrals } = await JestSDK.referrals.listReferrals();
       const count = (referrals[REFERRAL_REFERENCE] ?? []).length;
       if (count === 0) {

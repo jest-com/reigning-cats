@@ -69,6 +69,62 @@
         margin: 0 auto 14px;
       }
 
+      /* Registration gate shown after the first round, above the game canvas */
+      #register-screen {
+        position: absolute;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 24px 16px;
+        text-align: center;
+        font-family: "Courier New", monospace;
+        color: #ffffff;
+        background: #172033;
+        z-index: 1100;
+      }
+
+      #register-screen h1 {
+        font-size: 34px;
+        color: #ffff00;
+        text-shadow:
+          0 0 10px #ffff00,
+          0 0 20px #ffff00;
+        letter-spacing: 3px;
+      }
+
+      #register-cat-image {
+        width: 180px;
+        height: 180px;
+        filter: drop-shadow(0 0 18px rgba(26, 255, 68, 0.5));
+      }
+
+      #register-blurb {
+        font-size: 16px;
+        max-width: 320px;
+        line-height: 1.5;
+      }
+
+      #register-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      @media (max-width: 768px) {
+        #register-screen h1 {
+          font-size: 26px;
+        }
+
+        #register-cat-image {
+          width: 140px;
+          height: 140px;
+        }
+      }
+
       /* Mobile optimizations */
       @media (max-width: 768px) {
         #name-input-container {
@@ -290,6 +346,21 @@
         <button id="start-game-btn">START GAME</button>
       </div>
       <img id="jest-logo" src="jest-logo-dark.svg" alt="Jest" />
+    </div>
+    <div id="register-screen">
+      <h1>SAVE YOUR SCORE</h1>
+      <img
+        id="register-cat-image"
+        src="reg-cat-sms-512x512.png"
+        alt="Cat sending a text message"
+      />
+      <p id="register-blurb">
+        Text us to keep your high score and get back in with one tap.
+      </p>
+      <div id="register-actions">
+        <button id="register-btn" class="shop-btn">TEXT TO SAVE</button>
+        <button id="register-later-btn" class="shop-btn">NOT NOW</button>
+      </div>
     </div>
     <div id="game-container"></div>
     <script type="module" src="./src/main.ts"></script>
