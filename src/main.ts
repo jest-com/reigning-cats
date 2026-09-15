@@ -7,9 +7,10 @@ const gameWidth = isMobile() ? Math.min(window.innerWidth, 600) : 800;
 const gameHeight = isMobile() ? window.innerHeight : 1000;
 
 // Initialize the Jest SDK before starting the game.
-// autoLoginReminders stays on: the game only prompts guests after a meaningful
-// score, and leans on the platform for the longer-term nudging in between.
-JestSDK.init({ autoLoginReminders: true }).then(() => {
+// The platform's automatic reminders are off because the game runs its own
+// registration screen on its own cooldown, and two uncoordinated asks
+// competing for the same guest is worse than one well-timed one.
+JestSDK.init({ autoLoginReminders: false }).then(() => {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     width: gameWidth,

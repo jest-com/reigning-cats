@@ -231,7 +231,7 @@ export class GameOverScene extends Phaser.Scene {
     // Ask once the player has finished a round: that is the same "they got the
     // point" signal markFirstMilestone() reports, and a score they might not
     // want to lose. Re-prompt every REG_PROMPT_COOLDOWN_GAMES rounds if they
-    // declined, and let the platform's autoLoginReminders nudge in between.
+    // declined. Platform reminders are off, so this is the only ask a guest gets.
     const lastPromptGame =
       (JestSDK.data.get("lastRegPromptGame") as number) ?? 0;
     const isFirstPrompt = lastPromptGame === 0;
