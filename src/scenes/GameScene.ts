@@ -273,13 +273,6 @@ export class GameScene extends Phaser.Scene {
       highScore: isNewHighScore ? this.score : prevHighScore,
     });
 
-    JestSDK.captureEvent("game_over", {
-      score: this.score,
-      gamesPlayed,
-      isNewHighScore,
-      premium: this.isPremium,
-    });
-
     // Finishing a round is the earliest point the player has experienced the
     // core loop. Repeat calls are ignored, so this needs no "first run" flag.
     JestSDK.markFirstMilestone();
@@ -340,11 +333,6 @@ export class GameScene extends Phaser.Scene {
 
       await JestSDK.payments.completePurchase({
         purchaseToken: result.purchase.purchaseToken,
-      });
-
-      JestSDK.captureEvent("purchase", {
-        sku: result.purchase.productSku,
-        sandbox: result.purchase.sandbox === true,
       });
     } catch (err) {
       console.error("Purchase error:", err);
@@ -465,7 +453,6 @@ export class GameScene extends Phaser.Scene {
 
       // Apply the entitlement immediately, then refresh the offer list.
       this.isPremium = true;
-      JestSDK.captureEvent("subscribe", { sku });
       void this.renderSubscriptions();
     } catch (err) {
       console.error("Subscription error:", err);
