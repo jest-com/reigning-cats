@@ -13,8 +13,9 @@
  * This avoids the "Inbox Groundhog Day" trap where a returning player
  * keeps getting the same generic Day-1 reminder.
  *
- * Every body names the game, and every entry points at a different image:
- * the platform review checklist flags a series that does neither.
+ * No body names the game. The platform prepends it on SMS/RCS and shows it
+ * as the header on Home, so repeating it in the copy just duplicates it.
+ * Bodies stay distinct and each entry points at a different image.
  */
 
 type RetentionContext = { score: number; playerName: string };
@@ -44,9 +45,9 @@ const RETENTION_SERIES: SeriesEntry[] = [
     priority: "high",
     template: "score_challenge_v1",
     assetReference: ASSET_SCORE,
-    title: "Your crown is slipping",
+    title: "Your record is under threat",
     body: ({ score, playerName }) =>
-      `${playerName}, your Reigning Cats high score of ${score} is under threat. Come defend it.`,
+      `${playerName}, your high score of ${score} is slipping. Come and defend it.`,
     ctaText: "Play Now",
   },
   {
@@ -57,7 +58,7 @@ const RETENTION_SERIES: SeriesEntry[] = [
     assetReference: ASSET_CHALLENGERS,
     title: "Challengers are closing in",
     body: ({ score, playerName }) =>
-      `${playerName}, other cat wranglers are catching up to your ${score} in Reigning Cats.`,
+      `${playerName}, other players are catching up to your ${score}.`,
     ctaText: "Defend It",
   },
   {
@@ -66,9 +67,9 @@ const RETENTION_SERIES: SeriesEntry[] = [
     priority: "medium",
     template: "miss_you_v1",
     assetReference: ASSET_MISS_YOU,
-    title: "The cats miss you",
+    title: "Your basket is gathering dust",
     body: ({ playerName }) =>
-      `Hey ${playerName}, the Reigning Cats are restless and your basket is gathering dust.`,
+      `Hey ${playerName}, nothing has landed in your basket for three days.`,
     ctaText: "Play Again",
   },
   {
@@ -79,7 +80,7 @@ const RETENTION_SERIES: SeriesEntry[] = [
     assetReference: ASSET_SCORE,
     title: "Beat your best",
     body: ({ score, playerName }) =>
-      `${playerName}, ${score} is still your Reigning Cats record. One run could change that.`,
+      `${playerName}, ${score} is still your record. One run could change that.`,
     ctaText: "Try Now",
   },
   {
@@ -90,7 +91,7 @@ const RETENTION_SERIES: SeriesEntry[] = [
     assetReference: ASSET_CHALLENGERS,
     title: "Climb back up",
     body: ({ playerName }) =>
-      `The Reigning Cats leaderboard moved without you, ${playerName}. Time to climb back up.`,
+      `The leaderboard moved without you, ${playerName}. Time to climb back up.`,
     ctaText: "Climb",
   },
   {
@@ -99,9 +100,9 @@ const RETENTION_SERIES: SeriesEntry[] = [
     priority: "low",
     template: "empty_basket_v1",
     assetReference: ASSET_MISS_YOU,
-    title: "Your basket is empty",
+    title: "A week is a long time",
     body: ({ playerName }) =>
-      `${playerName}, nobody has caught a cat in your basket for days. Reigning Cats awaits.`,
+      `${playerName}, your basket has sat empty for almost a week.`,
     ctaText: "Play",
   },
   {
@@ -112,7 +113,7 @@ const RETENTION_SERIES: SeriesEntry[] = [
     assetReference: ASSET_SCORE,
     title: "One more run?",
     body: ({ score, playerName }) =>
-      `${playerName}, a whole week away from Reigning Cats. Can you still beat ${score}?`,
+      `${playerName}, can you still beat ${score}?`,
     ctaText: "Play",
   },
 ];
