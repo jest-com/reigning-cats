@@ -2,9 +2,27 @@ import Phaser from "phaser";
 import { dpr } from "../platform";
 import { scheduleRetentionSeries } from "../retention";
 import { captureCanvas } from "../snapshot";
+import { renderInviteCard } from "../share-card";
 
 const REG_PROMPT_COOLDOWN_GAMES = 5;
 const REFERRAL_REFERENCE = "share_score";
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+/** Button rows below centre; the pitch clears a 60px button plus a gap. */
+const BUTTON_ROWS = [110, 184, 258, 320];
+
+/** Stable per player and score, so the same share always shows the same code. */
+function inviteCode(playerName: string, score: number): string {
+  let hash = 2166136261;
+  for (const ch of `${playerName}:${score}`) {
+    hash = ((hash ^ ch.charCodeAt(0)) * 16777619) >>> 0;
+  }
+  let code = "";
+  for (let i = 0; i < 4; i++) {
+    code += CODE_ALPHABET[hash % CODE_ALPHABET.length];
+    hash = Math.floor(hash / CODE_ALPHABET.length);
+  }
+  return code;
+}
 
 export class GameOverScene extends Phaser.Scene {
   private finalScore = 0;
@@ -87,13 +105,18 @@ export class GameOverScene extends Phaser.Scene {
     this.buildLeaderboard(centerX, centerY - 86 * f, f);
 
     // Play Again
-    this.createButton(centerX, centerY + 110 * f, "Play Again", () => {
-      const container = document.getElementById("name-input-container");
-      if (container) {
-        container.style.display = "flex";
-      }
-      this.scene.start("GameScene");
-    });
+    this.createButton(
+      centerX,
+      centerY + BUTTON_ROWS[0]! * f,
+      "Play Again",
+      () => {
+        const container = document.getElementById("name-input-container");
+        if (container) {
+          container.style.display = "flex";
+        }
+        this.scene.start("GameScene");
+      },
+    );
 
     if (JestSDK.getPlayer().registered) {
       // Schedule a personalized D1 to D7 retention series tied to the
@@ -104,12 +127,22 @@ export class GameOverScene extends Phaser.Scene {
       });
 
       // Share button (referrals)
-      this.createButton(centerX, centerY + 172 * f, "Share", () => {
+      this.createButton(centerX, centerY + BUTTON_ROWS[1]! * f, "Share", () => {
         void this.shareScore();
       });
 
+      // Shares the invite ticket through the platform's own share sheet
+      this.createButton(
+        centerX,
+        centerY + BUTTON_ROWS[2]! * f,
+        "Share Invite",
+        () => {
+          void this.shareInvite();
+        },
+      );
+
       // Surface referral conversions the player has earned
-      this.showReferralCount(centerX, centerY + 212 * f);
+      this.showReferralCount(centerX, centerY + BUTTON_ROWS[3]! * f);
     } else {
       // Ask a guest to register at a meaningful moment rather than parking
       // a button on screen. The gate below explains what registering buys.
@@ -292,6 +325,34 @@ export class GameOverScene extends Phaser.Scene {
     screen.style.display = "flex";
   }
 
+  /**
+   * Shares a purpose-drawn invite ticket. A gameplay screenshot would bury the
+   * code; the ticket keeps it readable at chat-bubble size, and the same code
+   * rides back on the entry payload when someone taps the shared message.
+   */
+  private async shareInvite(): Promise<void> {
+    const code = inviteCode(this.playerName, this.finalScore);
+    const profile = JestSDK.social.getProfile({ avatarSize: 256 });
+
+    try {
+      const image = await renderInviteCard({
+        title: `Visit ${this.playerName}'s Cattery`,
+        code,
+        footer: "To join, enter this code in the Travel menu!",
+        playerName: this.playerName,
+        avatarUrl: profile?.avatarUrl,
+      });
+
+      const { canceled } = await JestSDK.social.shareImage({
+        image,
+        entryPayload: { referrer_name: this.playerName, invite_code: code },
+      });
+      console.log("[shareImage]", canceled ? "canceled" : "shared", code);
+    } catch (error) {
+      console.error("[shareImage] failed", error);
+    }
+  }
+
   private async shareScore(): Promise<void> {
     // A snapshot of this screen becomes the referral link's OG image, so the
     // preview in the messaging app shows the real score instead of static art.
@@ -366,13 +427,16 @@ export class GameOverScene extends Phaser.Scene {
     onClick: () => void,
   ): void {
     const f = this.uiScale;
-    const bg = this.add.rectangle(x, y, 200 * f, 60 * f, 0x1aff44);
+    const fontSize = Math.round(28 * f);
+    // Courier advances at ~0.6em, so a monospace label's width is predictable.
+    const width = Math.max(200 * f, label.length * fontSize * 0.6 + 48 * f);
+    const bg = this.add.rectangle(x, y, width, 60 * f, 0x1aff44);
     bg.setStrokeStyle(4, 0xffffff);
     bg.setInteractive({ useHandCursor: true });
 
     this.add
       .text(x, y, label, {
-        fontSize: `${Math.round(28 * f)}px`,
+        fontSize: `${fontSize}px`,
         fontFamily: "Courier New, monospace",
         color: "#ffffff",
         fontStyle: "bold",
